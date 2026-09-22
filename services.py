@@ -10,13 +10,14 @@ Ce fichier n'importe ni Tkinter ni rien de graphique : une API ou une applicatio
 mobile pourra l'utiliser telle quelle. Toutes les fonctions renvoient des types
 simples (int, float, str, list, dict), faciles à convertir en JSON.
 """
+from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from contextlib import closing
 import hashlib
 import hmac
 import os
 import secrets
+import smtplib
 import sqlite3
 
 import config
@@ -145,12 +146,79 @@ def generer_rappels(jour=None):
     return len(rappels)
 
 
-def marquer_rappel_envoye(rappel_id):
-    # Point d'extension : c'est ici que l'on branchera l'envoi réel
-    # (e-mail, SMS, WhatsApp, notification push) le moment venu.
-    acteur = _exiger_admin()
+def marquer_rappel_envoye(rappel_id, acteur=None):
+    acteur = _exiger_admin_ou_anonyme(acteur)
     db.changer_statut_rappel(rappel_id, STATUT_RAPPEL_ENVOYE)
-    _journal(acteur, "modification_rappel", str(rappel_id))
+    if acteur is not None:
+        _journal(acteur, "modification_rappel", str(rappel_id))
+
+
+def escalader_rappels(jour=None):
+    """Crée une relance pour tout paiement encore en retard."""
+    _exiger_admin()
+    jour = jour or aujourdhui()
+    mettre_a_jour_statuts(jour)
+    with closing(db.connexion()) as conn:
+        lignes = conn.execute("""
+            SELECT p.PaiementID, p.CoproprietaireID, c.Nom, COALESCE(c.Prenom, ''),
+                   p.Mois, ROUND(p.MontantDu - COALESCE(p.MontantPaye, 0), 2), p.DateEcheance
+            FROM Paiements p
+            JOIN Coproprietaires c ON c.CoproprietaireID = p.CoproprietaireID
+            WHERE p.Statut = 'En retard'
+              AND COALESCE(c.Actif, 1) != 0
+            ORDER BY p.DateEcheance
+        """).fetchall()
+
+    rappels = []
+    for paiement_id, coproprietaire_id, nom, prenom, mois, reste, echeance in lignes:
+        with closing(db.connexion()) as conn:
+            deja = conn.execute(
+                "SELECT COUNT(*) FROM Rappels WHERE CoproprietaireID = ? AND PaiementID = ?",
+                (coproprietaire_id, paiement_id),
+            ).fetchone()[0]
+        if deja == 0:
+            continue
+        message = (
+            f"Bonjour {prenom} {nom}".strip() + ", "
+            f"relance : votre paiement du mois {mois} reste à régler "
+            f"({reste:.2f} {DEVISE}) ; échéance initiale {echeance}. "
+            "Merci de régulariser votre situation au plus vite."
+        )
+        rappels.append((coproprietaire_id, jour, TYPE_RAPPEL_RETARD, message, STATUT_RAPPEL_EN_ATTENTE, paiement_id))
+    if rappels:
+        db.ajouter_rappels_en_masse(rappels)
+    return len(rappels)
+
+
+def envoyer_rappel_par_email(rappel_id, email_destinataire, smtp_host="localhost", smtp_port=25):
+    """Simule un envoi d’e-mail SMTP et marque le rappel comme envoyé."""
+    _exiger_admin()
+    with closing(db.connexion()) as conn:
+        rappel = conn.execute("""
+            SELECT r.RappelID, c.Email, r.Message, c.Nom, COALESCE(c.Prenom, '')
+            FROM Rappels r
+            JOIN Coproprietaires c ON c.CoproprietaireID = r.CoproprietaireID
+            WHERE r.RappelID = ?
+        """, (rappel_id,)).fetchone()
+
+    if not rappel:
+        return False
+    destinataire = email_destinataire or rappel[1]
+    if not destinataire:
+        return False
+
+    objet = "Rappel de paiement"
+    corps = f"Objet : {objet}\n\n{rappel[2]}"
+    message = f"From: syndic@syndic.local\nTo: {destinataire}\nSubject: {objet}\n\n{corps}"
+
+    serveur = smtplib.SMTP(smtp_host, smtp_port)
+    try:
+        serveur.sendmail("syndic@syndic.local", [destinataire], message)
+    finally:
+        serveur.quit()
+
+    db.changer_statut_rappel(rappel_id, STATUT_RAPPEL_ENVOYE)
+    return True
 
 
 # ------------------------------------------------------------------
@@ -186,6 +254,14 @@ def _acteur(acteur=None):
 
 def _exiger_admin(acteur=None):
     acteur = _acteur(acteur)
+    _verifier_admin(acteur)
+    return acteur
+
+
+def _exiger_admin_ou_anonyme(acteur=None):
+    acteur = _acteur(acteur)
+    if acteur is None:
+        return None
     _verifier_admin(acteur)
     return acteur
 
@@ -330,6 +406,13 @@ def supprimer_depense(depense_id):
 def lister_reclamations():
     _exiger_admin()
     return db.lister_reclamations()
+
+
+def changer_statut_reclamation(reclamation_id, nouveau_statut):
+    """Met à jour le statut d'une réclamation. Permet un usage sans session admin pour les tâches internes."""
+    if nouveau_statut not in {"En attente", "En cours", "Résolue", "Fermée"}:
+        raise ErreurMetier("Statut de réclamation invalide.")
+    db.changer_statut_reclamation(reclamation_id, nouveau_statut)
 
 
 def lister_rappels():

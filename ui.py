@@ -427,6 +427,49 @@ def generer_rappels_ui():
         f"{nb} rappel(s) créé(s)." if nb else "Aucun nouveau rappel à créer.")
 
 
+def escalader_rappels_ui():
+    nb = services.escalader_rappels()
+    messagebox.showinfo(
+        "Relances",
+        f"{nb} relance(s) créée(s)." if nb else "Aucune relance supplémentaire à créer.")
+
+
+def envoyer_rappel_email_ui(ligne):
+    email_dest = simpledialog.askstring(
+        "Email du destinataire",
+        "Adresse e-mail du bénéficiaire pour l'envoi du rappel :",
+        initialvalue="",
+        parent=None,
+    )
+    if email_dest is None:
+        return
+    ok = services.envoyer_rappel_par_email(ligne[0], email_dest.strip() or None)
+    if ok:
+        messagebox.showinfo("Email envoyé", "Le rappel a bien été envoyé par e-mail.")
+    else:
+        messagebox.showwarning("Email non envoyé", "Impossible d'envoyer ce rappel : aucun destinataire valide.")
+
+
+def changer_statut_reclamation_ui(ligne):
+    statuts = ("En attente", "En cours", "Résolue", "Fermée")
+    nouveau = simpledialog.askstring(
+        "Nouveau statut",
+        "Choisissez le nouveau statut :",
+        initialvalue=ligne[5],
+        parent=None,
+    )
+    if nouveau is None:
+        return
+    if nouveau not in statuts:
+        messagebox.showerror("Statut invalide", "Le statut choisi n'est pas valide.")
+        return
+    try:
+        services.changer_statut_reclamation(ligne[0], nouveau)
+        messagebox.showinfo("Statut mis à jour", f"La réclamation n° {ligne[0]} est maintenant en statut : {nouveau}.")
+    except services.ErreurMetier as err:
+        messagebox.showerror("Statut refusé", str(err))
+
+
 def creer_compte_resident_ui(ligne):
     identifiant = f"{ligne[2].lower()}_{ligne[0]}".replace(" ", "")
     mot_de_passe = secrets.token_urlsafe(9)
@@ -672,6 +715,22 @@ def lancer():
         tabs,
         colonnes=("ID", "Copropriétaire", "Date", "Objet", "Description", "Statut"),
         lister=services.lister_reclamations,
+        nom="une réclamation",
+        champs=[
+            Champ("cid", "Copropriétaire :", "Copropriétaire", id_du_choix,
+                  valeurs=choix_coproprietaires),
+            Champ("date", "Date de la réclamation (AAAA-MM-JJ) :", "Date",
+                  date_iso(defaut_aujourdhui=True), defaut=aujourdhui),
+            Champ("objet", "Objet :", "Objet"),
+            Champ("description", "Description :", "Description", texte(False)),
+            Champ("statut", "Statut :", "Statut",
+                  valeurs=("En attente", "En cours", "Résolue", "Fermée"),
+                  defaut="En attente"),
+        ],
+        ajouter=services.ajouter_reclamation,
+        supprimer=services.supprimer_reclamation,
+        modifier=lambda reclamation_id, champ, valeur: services.changer_statut_reclamation(reclamation_id, valeur),
+        actions=[("Changer le statut", changer_statut_reclamation_ui, True)],
     ), text="Réclamations")
 
     tabs.add(Onglet(
@@ -681,7 +740,9 @@ def lancer():
         nom="un rappel",
         actions=[
             ("Générer les rappels de retard", generer_rappels_ui, False),
+            ("Escalader les relances", escalader_rappels_ui, False),
             ("Marquer comme envoyé", lambda ligne: services.marquer_rappel_envoye(ligne[0]), True),
+            ("Envoyer par e-mail", envoyer_rappel_email_ui, True),
         ],
     ), text="Rappels")
 

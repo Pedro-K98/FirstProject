@@ -287,12 +287,13 @@ def depenses_par_type():
 # ------------------------------------------------------------------
 def ajouter_reclamation(coproprietaire_id, date_reclamation, objet, description, statut):
     with closing(connexion()) as conn:
-        conn.execute("""
+        curseur = conn.execute("""
             INSERT INTO Reclamations
                 (CoproprietaireID, DateReclamation, Objet, Description, Statut)
             VALUES (?, ?, ?, ?, ?)
         """, (coproprietaire_id, date_reclamation, objet, description, statut))
         conn.commit()
+        return curseur.lastrowid
 
 
 def lister_reclamations():

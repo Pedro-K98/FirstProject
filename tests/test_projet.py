@@ -106,6 +106,38 @@ class TestComptesUtilisateurs(unittest.TestCase):
         self.assertEqual(len(services.lister_reclamations_pour_utilisateur(imposteur)), 1)
         self.assertEqual(len(services.lister_rappels_pour_utilisateur(imposteur)), 1)
 
+    def test_reclamation_peut_changer_de_statut(self):
+        reclamation_id = db.ajouter_reclamation(
+            self.coproprietaire_id, "2026-01-15", "Plomberie", "Fuite", "En attente")
+        self.assertIsNotNone(reclamation_id)
+        services.changer_statut_reclamation(reclamation_id, "En cours")
+        services.changer_statut_reclamation(reclamation_id, "Résolue")
+        reclamation = db.lister_reclamations()[0]
+        self.assertEqual(reclamation[5], "Résolue")
+
+    def test_escalade_des_rappels_generes(self):
+        services.definir_utilisateur_connecte(self.admin)
+        db.ajouter_paiement(self.coproprietaire_id, "2026-01", "2026-01-10",
+                            10000, 0, "Impaye", "Virement", "2026-01-31")
+        services.generer_rappels("2026-02-05")
+        self.assertEqual(len(db.lister_rappels()), 1)
+        services.escalader_rappels("2026-02-20")
+        rappels = db.lister_rappels()
+        self.assertEqual(len(rappels), 2)
+        self.assertEqual(rappels[0][3], "Retard de paiement")
+        self.assertTrue(any("relance" in rappel[4].lower() for rappel in rappels))
+
+    @patch("smtplib.SMTP")
+    def test_envoi_email_rappel(self, smtp_mock):
+        services.definir_utilisateur_connecte(self.admin)
+        db.ajouter_paiement(self.coproprietaire_id, "2026-01", "2026-01-10",
+                            10000, 0, "Impaye", "Virement", "2026-01-31")
+        services.generer_rappels("2026-02-05")
+        rappel = db.lister_rappels()[0]
+        avec_email = services.envoyer_rappel_par_email(rappel[0], "test@example.com")
+        self.assertTrue(avec_email)
+        smtp_mock.return_value.sendmail.assert_called_once()
+
     def test_action_journalisee(self):
         services.definir_utilisateur_connecte(self.admin)
         services.ajouter_coproprietaire(
