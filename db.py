@@ -399,7 +399,8 @@ def utilisateur_par_identifiant(identifiant):
     with closing(connexion()) as conn:
         return conn.execute("""
             SELECT UtilisateurID, CoproprietaireID, Identifiant,
-                   MotDePasseHache, Sel, Role, Actif, DateCreation
+                   MotDePasseHache, Sel, Role, Actif, DateCreation,
+                   ChangementMotDePasseObligatoire
             FROM Utilisateurs WHERE Identifiant = ?
         """, (identifiant,)).fetchone()
 
@@ -408,7 +409,8 @@ def utilisateur_par_id(utilisateur_id):
     with closing(connexion()) as conn:
         return conn.execute("""
             SELECT UtilisateurID, CoproprietaireID, Identifiant,
-                   MotDePasseHache, Sel, Role, Actif, DateCreation
+                   MotDePasseHache, Sel, Role, Actif, DateCreation,
+                   ChangementMotDePasseObligatoire
             FROM Utilisateurs WHERE UtilisateurID = ?
         """, (utilisateur_id,)).fetchone()
 
@@ -416,7 +418,8 @@ def utilisateur_par_id(utilisateur_id):
 def modifier_mot_de_passe(utilisateur_id, mot_de_passe_hache, sel):
     with closing(connexion()) as conn:
         conn.execute("""
-            UPDATE Utilisateurs SET MotDePasseHache = ?, Sel = ?
+            UPDATE Utilisateurs SET MotDePasseHache = ?, Sel = ?,
+                ChangementMotDePasseObligatoire = 0
             WHERE UtilisateurID = ?
         """, (mot_de_passe_hache, sel, utilisateur_id))
         conn.commit()
@@ -426,6 +429,20 @@ def desactiver_utilisateur(utilisateur_id):
     with closing(connexion()) as conn:
         conn.execute("UPDATE Utilisateurs SET Actif = 0 WHERE UtilisateurID = ?",
                      (utilisateur_id,))
+        conn.commit()
+
+
+def activer_utilisateur(utilisateur_id):
+    with closing(connexion()) as conn:
+        conn.execute("UPDATE Utilisateurs SET Actif = 1 WHERE UtilisateurID = ?",
+                     (utilisateur_id,))
+        conn.commit()
+
+
+def supprimer_utilisateur(utilisateur_id):
+    with closing(connexion()) as conn:
+        conn.execute("DELETE FROM JournalActions WHERE UtilisateurID = ?", (utilisateur_id,))
+        conn.execute("DELETE FROM Utilisateurs WHERE UtilisateurID = ?", (utilisateur_id,))
         conn.commit()
 
 
@@ -443,3 +460,56 @@ def journaliser(utilisateur_id, action, details, date_heure):
             VALUES (?, ?, ?, ?)
         """, (utilisateur_id, action, details, date_heure))
         conn.commit()
+
+
+def lister_utilisateurs():
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT u.UtilisateurID, u.CoproprietaireID, u.Identifiant,
+                   u.Role, u.Actif, u.DateCreation,
+                   u.ChangementMotDePasseObligatoire,
+                   COALESCE(c.Nom || ' ' || COALESCE(c.Prenom, ''), '')
+            FROM Utilisateurs u
+            LEFT JOIN Coproprietaires c ON c.CoproprietaireID = u.CoproprietaireID
+            ORDER BY u.Identifiant
+        """).fetchall()
+
+
+def lister_journal():
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT j.JournalActionID, u.Identifiant, u.Role,
+                   j.Action, j.Details, j.DateHeure
+            FROM JournalActions j
+            JOIN Utilisateurs u ON u.UtilisateurID = j.UtilisateurID
+            ORDER BY j.DateHeure DESC, j.JournalActionID DESC
+        """).fetchall()
+
+
+def lister_paiements_pour_coproprietaire(coproprietaire_id):
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT p.PaiementID, p.Mois, p.DatePaiement, p.MontantDu,
+                   p.MontantPaye, p.Statut, p.ModePaiement, p.DateEcheance
+            FROM Paiements p
+            WHERE p.CoproprietaireID = ?
+            ORDER BY p.DatePaiement DESC
+        """, (coproprietaire_id,)).fetchall()
+
+
+def lister_reclamations_pour_coproprietaire(coproprietaire_id):
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT ReclamationID, DateReclamation, Objet, Description, Statut
+            FROM Reclamations WHERE CoproprietaireID = ?
+            ORDER BY DateReclamation DESC
+        """, (coproprietaire_id,)).fetchall()
+
+
+def lister_rappels_pour_coproprietaire(coproprietaire_id):
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT RappelID, DateRappel, TypeRappel, Message, StatutEnvoi
+            FROM Rappels WHERE CoproprietaireID = ?
+            ORDER BY DateRappel DESC
+        """, (coproprietaire_id,)).fetchall()

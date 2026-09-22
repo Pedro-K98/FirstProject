@@ -16,6 +16,7 @@ from contextlib import closing
 import hashlib
 import hmac
 import os
+import sqlite3
 
 import config
 import db
@@ -61,6 +62,7 @@ def mettre_a_jour_statuts(jour=None):
 
 def lister_paiements():
     """Liste des paiements avec des statuts à jour (un retard peut apparaître avec le temps)."""
+    _exiger_admin()
     mettre_a_jour_statuts()
     lignes = db.lister_paiements()
     return [ligne[:4] + tuple(en_montant(v) for v in ligne[4:7]) + ligne[7:]
@@ -70,10 +72,12 @@ def lister_paiements():
 def enregistrer_paiement(coproprietaire_id, mois, date_paiement, montant_du,
                          montant_paye, mode_paiement, date_echeance):
     """Enregistre un paiement ; le statut est calculé automatiquement (plus de saisie manuelle)."""
+    acteur = _exiger_admin()
     db.ajouter_paiement(coproprietaire_id, mois, date_paiement,
                         en_centimes(montant_du), en_centimes(montant_paye),
                         "Impaye", mode_paiement, date_echeance)
     mettre_a_jour_statuts()
+    _journal(acteur, "ajout_paiement", f"Copropriétaire {coproprietaire_id}, mois {mois}")
 
 
 # ------------------------------------------------------------------
@@ -81,6 +85,7 @@ def enregistrer_paiement(coproprietaire_id, mois, date_paiement, montant_du,
 # ------------------------------------------------------------------
 def tableau_de_bord():
     """Toutes les statistiques du tableau de bord dans un dictionnaire."""
+    _exiger_admin()
     mettre_a_jour_statuts()
 
     total_du, total_paye, reste, nb_retard = db.totaux_paiements()
@@ -121,6 +126,7 @@ def _message_retard(prenom, nom, mois, reste, echeance):
 def generer_rappels(jour=None):
     """Crée un rappel pour chaque paiement en retard qui n'en a pas encore.
     Peut être relancée sans risque : aucun doublon. Renvoie le nombre de rappels créés."""
+    acteur = _exiger_admin()
     jour = jour or aujourdhui()
     mettre_a_jour_statuts(jour)
 
@@ -132,24 +138,31 @@ def generer_rappels(jour=None):
         in db.paiements_en_retard_sans_rappel()
     ]
     db.ajouter_rappels_en_masse(rappels)
+    if rappels:
+        _journal(acteur, "generation_rappels", f"{len(rappels)} rappel(s)")
     return len(rappels)
 
 
 def marquer_rappel_envoye(rappel_id):
     # Point d'extension : c'est ici que l'on branchera l'envoi réel
     # (e-mail, SMS, WhatsApp, notification push) le moment venu.
+    acteur = _exiger_admin()
     db.changer_statut_rappel(rappel_id, STATUT_RAPPEL_ENVOYE)
+    _journal(acteur, "modification_rappel", str(rappel_id))
 
 
 # ------------------------------------------------------------------
 # DEPENSES
 # ------------------------------------------------------------------
 def enregistrer_depense(date_depense, type_depense, montant, description, valide_par):
+    acteur = _exiger_admin()
     db.ajouter_depense(date_depense, type_depense, en_centimes(montant),
                        description, valide_par)
+    _journal(acteur, "ajout_depense", f"{type_depense}: {description}")
 
 
 def lister_depenses():
+    _exiger_admin()
     return [ligne[:3] + (en_montant(ligne[3]),) + ligne[4:]
             for ligne in db.lister_depenses()]
 
@@ -157,12 +170,22 @@ def lister_depenses():
 # ------------------------------------------------------------------
 # AUTHENTIFICATION ET DROITS
 # ------------------------------------------------------------------
-ITERATIONS_PBKDF2 = 310_000
+ITERATIONS_PBKDF2 = 200_000
 
 
 def _verifier_admin(acteur):
     if not acteur or acteur[5] != "Admin" or not acteur[6]:
         raise ErreurMetier("Seul un administrateur actif peut effectuer cette action.")
+
+
+def _acteur(acteur=None):
+    return acteur or _utilisateur_connecte
+
+
+def _exiger_admin(acteur=None):
+    acteur = _acteur(acteur)
+    _verifier_admin(acteur)
+    return acteur
 
 
 def _empreinte(mot_de_passe, sel):
@@ -178,7 +201,7 @@ def _valider_identifiants(identifiant, mot_de_passe):
 
 
 def _journal(acteur, action, details):
-    acteur = acteur or _utilisateur_connecte
+    acteur = _acteur(acteur)
     if acteur:
         db.journaliser(acteur[0], action, details, datetime.now().isoformat(timespec="seconds"))
 
@@ -193,44 +216,52 @@ def utilisateur_connecte():
 
 
 def lister_coproprietaires():
+    _exiger_admin()
     return db.lister_coproprietaires()
 
 
 def ajouter_coproprietaire(*args):
+    acteur = _exiger_admin()
     resultat = db.ajouter_coproprietaire(*args)
-    _journal(None, "ajout_coproprietaire", str(args[1]))
+    _journal(acteur, "ajout_coproprietaire", str(args[1]))
     return resultat
 
 
 def supprimer_coproprietaire(coproprietaire_id):
+    acteur = _exiger_admin()
     resultat = db.supprimer_coproprietaire(coproprietaire_id)
-    _journal(None, "suppression_coproprietaire", str(coproprietaire_id))
+    _journal(acteur, "suppression_coproprietaire", str(coproprietaire_id))
     return resultat
 
 
 def modifier_coproprietaire(coproprietaire_id, champ, valeur):
+    acteur = _exiger_admin()
     resultat = db.modifier_coproprietaire(coproprietaire_id, champ, valeur)
-    _journal(None, "modification_coproprietaire", f"{coproprietaire_id}: {champ}")
+    _journal(acteur, "modification_coproprietaire", f"{coproprietaire_id}: {champ}")
     return resultat
 
 
 def supprimer_paiement(paiement_id):
+    acteur = _exiger_admin()
     resultat = db.supprimer_paiement(paiement_id)
-    _journal(None, "suppression_paiement", str(paiement_id))
+    _journal(acteur, "suppression_paiement", str(paiement_id))
     return resultat
 
 
 def supprimer_depense(depense_id):
+    acteur = _exiger_admin()
     resultat = db.supprimer_depense(depense_id)
-    _journal(None, "suppression_depense", str(depense_id))
+    _journal(acteur, "suppression_depense", str(depense_id))
     return resultat
 
 
 def lister_reclamations():
+    _exiger_admin()
     return db.lister_reclamations()
 
 
 def lister_rappels():
+    _exiger_admin()
     return db.lister_rappels()
 
 
@@ -243,16 +274,16 @@ def creer_utilisateur(identifiant, mot_de_passe, role="Resident",
         raise ErreurMetier("Le rôle choisi est invalide.")
     if role == "Resident" and coproprietaire_id is None:
         raise ErreurMetier("Un compte résident doit être lié à un copropriétaire.")
-    if role == "Admin" and db.compter_administrateurs() and acteur is not None:
-        _verifier_admin(acteur)
-    if role == "Resident" and acteur is not None:
-        _verifier_admin(acteur)
+    if db.compter_administrateurs():
+        acteur = _exiger_admin(acteur)
+    elif role == "Resident":
+        raise ErreurMetier("Un administrateur doit d'abord être créé.")
     sel = os.urandom(16)
     try:
         utilisateur_id = db.creer_utilisateur(
             coproprietaire_id, identifiant, _empreinte(mot_de_passe, sel), sel,
             role, datetime.now().isoformat(timespec="seconds"))
-    except db.sqlite3.IntegrityError as err:
+    except sqlite3.IntegrityError as err:
         if "Identifiant" in str(err) or "UNIQUE" in str(err):
             raise ErreurMetier("Cet identifiant est déjà utilisé.") from None
         raise
@@ -273,7 +304,10 @@ def changer_mot_de_passe(utilisateur_id, nouveau_mot_de_passe, acteur=None):
     utilisateur = db.utilisateur_par_id(utilisateur_id)
     if not utilisateur:
         raise ErreurMetier("Compte introuvable.")
-    if acteur is not None and acteur[0] != utilisateur_id:
+    if not acteur or not acteur[6]:
+        raise ErreurMetier("Le compte est inactif ou la session est invalide.")
+    acteur = _acteur(acteur)
+    if acteur is None or acteur[0] != utilisateur_id:
         _verifier_admin(acteur)
     sel = os.urandom(16)
     db.modifier_mot_de_passe(utilisateur_id, _empreinte(nouveau_mot_de_passe, sel), sel)
@@ -281,13 +315,91 @@ def changer_mot_de_passe(utilisateur_id, nouveau_mot_de_passe, acteur=None):
 
 
 def desactiver_utilisateur(utilisateur_id, acteur=None):
-    _verifier_admin(acteur)
+    acteur = _exiger_admin(acteur)
     if acteur[0] == utilisateur_id:
         raise ErreurMetier("Vous ne pouvez pas désactiver votre propre compte.")
     if not db.utilisateur_par_id(utilisateur_id):
         raise ErreurMetier("Compte introuvable.")
     db.desactiver_utilisateur(utilisateur_id)
     _journal(acteur, "desactivation_compte", str(utilisateur_id))
+
+
+def activer_utilisateur(utilisateur_id, acteur=None):
+    acteur = _exiger_admin(acteur)
+    if not db.utilisateur_par_id(utilisateur_id):
+        raise ErreurMetier("Compte introuvable.")
+    db.activer_utilisateur(utilisateur_id)
+    _journal(acteur, "activation_compte", str(utilisateur_id))
+
+
+def supprimer_utilisateur(utilisateur_id, acteur=None):
+    acteur = _exiger_admin(acteur)
+    if acteur[0] == utilisateur_id:
+        raise ErreurMetier("Vous ne pouvez pas supprimer votre propre compte.")
+    if not db.utilisateur_par_id(utilisateur_id):
+        raise ErreurMetier("Compte introuvable.")
+    db.supprimer_utilisateur(utilisateur_id)
+    _journal(acteur, "suppression_compte", str(utilisateur_id))
+
+
+def lister_utilisateurs():
+    _exiger_admin()
+    return db.lister_utilisateurs()
+
+
+def lister_journal():
+    _exiger_admin()
+    return db.lister_journal()
+
+
+def reinitialiser_mot_de_passe(utilisateur_id, acteur=None):
+    acteur = _exiger_admin(acteur)
+    mot_de_passe = os.urandom(9).hex()
+    changer_mot_de_passe(utilisateur_id, mot_de_passe, acteur)
+    _journal(acteur, "reinitialisation_mot_de_passe", str(utilisateur_id))
+    return mot_de_passe
+
+
+def lister_paiements_pour_utilisateur(utilisateur=None):
+    utilisateur = utilisateur or _acteur()
+    if not utilisateur or not utilisateur[6]:
+        raise ErreurMetier("Le compte est inactif ou la session est invalide.")
+    if utilisateur[5] == "Admin":
+        return lister_paiements()
+    if utilisateur[5] != "Resident" or utilisateur[1] is None:
+        raise ErreurMetier("Ce compte ne peut pas consulter ces données.")
+    lignes = db.lister_paiements_pour_coproprietaire(utilisateur[1])
+    return [ligne[:3] + tuple(en_montant(v) for v in ligne[3:5]) + ligne[5:]
+            for ligne in lignes]
+
+
+def lister_appels_pour_utilisateur(utilisateur=None):
+    return lister_paiements_pour_utilisateur(utilisateur)
+
+
+def lister_reclamations_pour_utilisateur(utilisateur=None):
+    utilisateur = utilisateur or _acteur()
+    if not utilisateur or not utilisateur[6] or utilisateur[5] != "Resident":
+        raise ErreurMetier("Seul un résident actif peut consulter ses réclamations.")
+    return db.lister_reclamations_pour_coproprietaire(utilisateur[1])
+
+
+def lister_rappels_pour_utilisateur(utilisateur=None):
+    utilisateur = utilisateur or _acteur()
+    if not utilisateur or not utilisateur[6] or utilisateur[5] != "Resident":
+        raise ErreurMetier("Seul un résident actif peut consulter ses rappels.")
+    return db.lister_rappels_pour_coproprietaire(utilisateur[1])
+
+
+def tableau_resident(utilisateur=None):
+    utilisateur = utilisateur or _acteur()
+    if not utilisateur or not utilisateur[6] or utilisateur[5] != "Resident":
+        raise ErreurMetier("Accès résident refusé.")
+    return {
+        "paiements": lister_paiements_pour_utilisateur(utilisateur),
+        "reclamations": lister_reclamations_pour_utilisateur(utilisateur),
+        "rappels": lister_rappels_pour_utilisateur(utilisateur),
+    }
 
 
 def initialiser_base():

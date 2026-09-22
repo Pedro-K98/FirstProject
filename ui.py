@@ -429,14 +429,7 @@ def generer_rappels_ui():
 
 def creer_compte_resident_ui(ligne):
     identifiant = f"{ligne[2].lower()}_{ligne[0]}".replace(" ", "")
-    mot_de_passe = simpledialog.askstring(
-        "Compte résident",
-        f"Identifiant généré : {identifiant}\nMot de passe (vide = générer) :",
-        show="*",
-    )
-    if mot_de_passe is None:
-        return
-    mot_de_passe = mot_de_passe or secrets.token_urlsafe(9)
+    mot_de_passe = secrets.token_urlsafe(9)
     try:
         services.creer_utilisateur(
             identifiant, mot_de_passe, role="Resident",
@@ -446,61 +439,129 @@ def creer_compte_resident_ui(ligne):
         return
     messagebox.showinfo(
         "Compte résident créé",
-        f"Identifiant : {identifiant}\nMot de passe : {mot_de_passe}")
-
-
-def _creer_premier_admin(parent):
-    identifiant = simpledialog.askstring("Premier administrateur", "Identifiant :", parent=parent)
-    mot_de_passe = simpledialog.askstring(
-        "Premier administrateur", "Mot de passe (8 caractères minimum) :",
-        show="*", parent=parent)
-    if identifiant is None or mot_de_passe is None:
-        return False
-    try:
-        services.creer_utilisateur(identifiant, mot_de_passe, role="Admin")
-    except services.ErreurMetier as err:
-        messagebox.showerror("Création du compte", str(err), parent=parent)
-        return False
-    messagebox.showinfo("Compte créé", "Le premier compte administrateur est prêt.", parent=parent)
-    return True
+        f"Identifiant : {identifiant}\n\nMot de passe provisoire : {mot_de_passe}\n\n"
+        "Notez-le maintenant : il ne sera plus affiché.")
 
 
 def demander_connexion(parent):
     resultat = []
     fenetre = tk.Toplevel(parent)
     fenetre.title("Connexion administrateur")
+    fenetre.geometry("430x190")
     fenetre.resizable(False, False)
     fenetre.protocol("WM_DELETE_WINDOW", fenetre.destroy)
     identifiant = tk.StringVar()
     mot_de_passe = tk.StringVar()
     cadre = ttk.Frame(fenetre, padding=20)
     cadre.pack()
-    ttk.Label(cadre, text="Identifiant :").grid(row=0, column=0, sticky="w", pady=4)
+    ttk.Label(cadre, text="Connexion à l'application Syndic",
+              font=("TkDefaultFont", 12, "bold")).grid(
+                  row=0, column=0, columnspan=2, pady=(0, 10))
+    ttk.Label(cadre, text="Identifiant :").grid(row=1, column=0, sticky="w", pady=4)
     entree_identifiant = ttk.Entry(cadre, textvariable=identifiant, width=28)
-    entree_identifiant.grid(row=0, column=1, pady=4)
-    ttk.Label(cadre, text="Mot de passe :").grid(row=1, column=0, sticky="w", pady=4)
+    entree_identifiant.grid(row=1, column=1, pady=4)
+    ttk.Label(cadre, text="Mot de passe :").grid(row=2, column=0, sticky="w", pady=4)
     entree_mot_de_passe = ttk.Entry(cadre, textvariable=mot_de_passe, show="*", width=28)
-    entree_mot_de_passe.grid(row=1, column=1, pady=4)
+    entree_mot_de_passe.grid(row=2, column=1, pady=4)
 
     def connecter():
         utilisateur = services.verifier_identifiants(identifiant.get(), mot_de_passe.get())
-        if not utilisateur or utilisateur[5] != "Admin":
+        if not utilisateur:
             messagebox.showerror("Connexion refusée", "Identifiant ou mot de passe incorrect.", parent=fenetre)
             return
+        if utilisateur[8]:
+            nouveau = simpledialog.askstring(
+                "Changement obligatoire",
+                "Ce mot de passe est provisoire. Choisissez un nouveau mot de passe :",
+                show="*", parent=fenetre)
+            if nouveau is None:
+                messagebox.showwarning(
+                    "Changement obligatoire",
+                    "Le changement de mot de passe est obligatoire pour continuer.",
+                    parent=fenetre)
+                return
+            try:
+                services.changer_mot_de_passe(utilisateur[0], nouveau, utilisateur)
+            except services.ErreurMetier as err:
+                messagebox.showerror("Mot de passe invalide", str(err), parent=fenetre)
+                return
+            utilisateur = services.verifier_identifiants(identifiant.get(), nouveau)
         resultat.append(utilisateur)
         fenetre.destroy()
 
     ttk.Button(cadre, text="Se connecter", command=connecter).grid(
-        row=2, column=0, columnspan=2, sticky="ew", pady=(10, 4))
-    if services.compter_administrateurs() == 0:
-        ttk.Button(cadre, text="Créer le premier administrateur",
-                   command=lambda: _creer_premier_admin(fenetre)).grid(
-                       row=3, column=0, columnspan=2, sticky="ew")
+        row=3, column=0, columnspan=2, sticky="ew", pady=(10, 4))
+    cadre.columnconfigure(1, weight=1)
+    fenetre.update_idletasks()
     entree_identifiant.focus_set()
     fenetre.transient(parent)
     fenetre.grab_set()
+    fenetre.deiconify()
+    fenetre.lift()
+    fenetre.attributes("-topmost", True)
+    fenetre.after(250, lambda: fenetre.attributes("-topmost", False))
+    fenetre.focus_force()
     parent.wait_window(fenetre)
     return resultat[0] if resultat else None
+
+
+class TableauResident(ttk.Frame):
+    """Vue en lecture seule dont les données sont filtrées par services.py."""
+    def __init__(self, parent, utilisateur):
+        super().__init__(parent, padding=10)
+        self.utilisateur = utilisateur
+        ttk.Label(self, text=f"Espace résident - {utilisateur[2]}",
+                  font=("TkDefaultFont", 15, "bold")).pack(anchor="w", pady=(0, 8))
+        contenu = ttk.Notebook(self)
+        contenu.pack(fill="both", expand=True)
+        donnees = services.tableau_resident(utilisateur)
+        self._table(contenu, "Mes appels et paiements",
+                     ("ID", "Mois", "Date", "Dû", "Payé", "Statut", "Mode", "Échéance"),
+                     donnees["paiements"])
+        self._table(contenu, "Mes réclamations",
+                     ("ID", "Date", "Objet", "Description", "Statut"),
+                     donnees["reclamations"])
+        self._table(contenu, "Mes rappels",
+                     ("ID", "Date", "Type", "Message", "Statut"),
+                     donnees["rappels"])
+
+    @staticmethod
+    def _table(parent, titre, colonnes, lignes):
+        cadre = ttk.Frame(parent, padding=8)
+        parent.add(cadre, text=titre)
+        table = ttk.Treeview(cadre, columns=colonnes, show="headings", selectmode="none")
+        for colonne in colonnes:
+            table.heading(colonne, text=colonne)
+            table.column(colonne, width=120, anchor="w")
+        for ligne in lignes:
+            table.insert("", "end", values=ligne)
+        table.pack(side="left", fill="both", expand=True)
+        barre = ttk.Scrollbar(cadre, orient="vertical", command=table.yview)
+        table.configure(yscrollcommand=barre.set)
+        barre.pack(side="right", fill="y")
+
+
+def desactiver_utilisateur_ui(ligne):
+    services.desactiver_utilisateur(ligne[0])
+    messagebox.showinfo("Compte désactivé", f"Le compte {ligne[2]} est désactivé.")
+
+
+def activer_utilisateur_ui(ligne):
+    services.activer_utilisateur(ligne[0])
+    messagebox.showinfo("Compte activé", f"Le compte {ligne[2]} est activé.")
+
+
+def supprimer_utilisateur_ui(ligne):
+    if messagebox.askyesno("Confirmation", f"Supprimer le compte {ligne[2]} ?"):
+        services.supprimer_utilisateur(ligne[0])
+
+
+def reinitialiser_mot_de_passe_ui(ligne):
+    mot_de_passe = services.reinitialiser_mot_de_passe(ligne[0])
+    messagebox.showinfo(
+        "Mot de passe provisoire",
+        f"Compte : {ligne[2]}\n\nNouveau mot de passe : {mot_de_passe}\n\n"
+        "Notez-le maintenant : il ne sera plus affiché.")
 
 
 # ---------------------------------------------------------------
@@ -521,6 +582,11 @@ def lancer():
         return
     services.definir_utilisateur_connecte(utilisateur)
     root.deiconify()
+
+    if utilisateur[5] == "Resident":
+        TableauResident(root, utilisateur).pack(fill="both", expand=True, padx=10, pady=10)
+        root.mainloop()
+        return
 
     aujourdhui = date.today().isoformat()
     tabs = ttk.Notebook(root)
@@ -552,7 +618,7 @@ def lancer():
         ajouter=services.ajouter_coproprietaire,
         supprimer=services.supprimer_coproprietaire,
         modifier=services.modifier_coproprietaire,
-        actions=[("Créer un compte résident", creer_compte_resident_ui, True)],
+        actions=[("Créer un accès résident", creer_compte_resident_ui, True)],
     ), text="Copropriétaires")
 
     tabs.add(Onglet(
@@ -610,6 +676,26 @@ def lancer():
             ("Marquer comme envoyé", lambda ligne: services.marquer_rappel_envoye(ligne[0]), True),
         ],
     ), text="Rappels")
+
+    tabs.add(Onglet(
+        tabs,
+        colonnes=("ID", "Copropriétaire ID", "Identifiant", "Rôle", "Actif",
+                  "Date création", "Changement requis", "Copropriétaire"),
+        lister=services.lister_utilisateurs,
+        nom="un utilisateur",
+        actions=[
+            ("Activer", activer_utilisateur_ui, True),
+            ("Désactiver", desactiver_utilisateur_ui, True),
+            ("Supprimer", supprimer_utilisateur_ui, True),
+            ("Réinitialiser le mot de passe", reinitialiser_mot_de_passe_ui, True),
+        ],
+    ), text="Utilisateurs")
+
+    tabs.add(Onglet(
+        tabs,
+        colonnes=("ID", "Utilisateur", "Rôle", "Action", "Détails", "Date/heure"),
+        lister=services.lister_journal,
+    ), text="Journal")
 
     # Recharge l'onglet affiché à chaque changement d'onglet
     # (nouveaux copropriétaires dans la liste déroulante, données à jour…)

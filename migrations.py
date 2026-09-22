@@ -1,5 +1,7 @@
 """Migrations SQLite versionnees. Une migration publiee ne doit jamais etre modifiee."""
 from datetime import datetime
+import hashlib
+import os
 
 import sauvegarde
 
@@ -44,9 +46,32 @@ def _migration_centimes(conn):
     """)
 
 
+def _migration_comptes_phase_3(conn):
+    colonnes = {ligne[1] for ligne in conn.execute("PRAGMA table_info(Utilisateurs)")}
+    if "ChangementMotDePasseObligatoire" not in colonnes:
+        conn.execute("""
+            ALTER TABLE Utilisateurs ADD COLUMN ChangementMotDePasseObligatoire
+            INTEGER NOT NULL DEFAULT 0 CHECK (ChangementMotDePasseObligatoire IN (0, 1))
+        """)
+
+    if conn.execute("SELECT 1 FROM Utilisateurs WHERE Role = 'Admin' LIMIT 1").fetchone():
+        return
+    sel = os.urandom(16)
+    empreinte = hashlib.pbkdf2_hmac(
+        "sha256", b"admin", sel, 200_000)
+    conn.execute("""
+        INSERT INTO Utilisateurs
+            (CoproprietaireID, Identifiant, MotDePasseHache, Sel, Role,
+             Actif, DateCreation, ChangementMotDePasseObligatoire)
+        VALUES (NULL, 'admin', ?, ?, 'Admin', 1, ?, 1)
+    """, (empreinte, sel, datetime.now().isoformat(timespec="seconds")))
+
+
 MIGRATIONS = (
     (1, "comptes utilisateurs et journal", _migration_utilisateurs),
     (2, "conversion des montants en centimes", _migration_centimes),
+    (9, "comptes administrateur et changement de mot de passe obligatoire",
+     _migration_comptes_phase_3),
 )
 
 
