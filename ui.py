@@ -9,6 +9,7 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import Callable
 
 import services
+import sauvegarde
 
 
 # ---------------------------------------------------------------
@@ -125,6 +126,8 @@ class Onglet(ttk.Frame):
         self.entrees = {}
         self.lignes = {}  # iid -> ligne d'origine (valeurs non altérées par Tk)
         self.idx = {c.cle: self.colonnes.index(c.col) for c in self.champs}
+        self.texte_filtre = tk.StringVar()
+        self.statut_filtre = tk.StringVar(value="Tous")
 
         if self.champs:
             self._creer_formulaire()
@@ -159,7 +162,7 @@ class Onglet(ttk.Frame):
         boutons = ttk.Frame(haut)
         boutons.grid(row=0, column=2, rowspan=len(self.champs), padx=20, sticky="n")
         actions = [
-            ("Ajouter", self._ajouter, self.ajouter),
+            ("Enregistrer", self._ajouter, self.ajouter),
             ("Modifier", self._modifier, self.modifier),
             ("Supprimer", self._supprimer, self.supprimer),
             ("Réinitialiser", self._vider, True),
@@ -172,6 +175,29 @@ class Onglet(ttk.Frame):
         self._remplir_defauts()
 
     def _creer_tableau(self):
+        filtres = ttk.Frame(self)
+        filtres.pack(fill="x", pady=(8, 0))
+        ttk.Label(filtres, text="Rechercher :").pack(side="left", padx=(0, 5))
+        recherche = ttk.Entry(filtres, textvariable=self.texte_filtre, width=32)
+        recherche.pack(side="left")
+        self.texte_filtre.trace_add("write", lambda *_: self._afficher_lignes())
+
+        if "Statut" in self.colonnes:
+            statuts = ("Tous", "En attente", "En cours", "Résolue", "Fermée")
+            if "Type" in self.colonnes and "Message" in self.colonnes:
+                statuts = ("Tous", "En attente", "Envoye")
+            ttk.Label(filtres, text="Statut :").pack(side="left", padx=(18, 5))
+            statut = ttk.Combobox(
+                filtres, textvariable=self.statut_filtre,
+                values=statuts,
+                state="readonly", width=16,
+            )
+            statut.pack(side="left")
+            statut.bind("<<ComboboxSelected>>", lambda _event: self._afficher_lignes())
+
+        ttk.Button(filtres, text="Effacer", command=self._effacer_filtres).pack(
+            side="left", padx=8)
+
         zone = ttk.Frame(self)
         zone.pack(fill="both", expand=True, pady=(10, 0))
 
@@ -234,8 +260,25 @@ class Onglet(ttk.Frame):
             return
         # On garde les lignes d'origine : Treeview convertit "0612..." en 612...
         self.lignes = {str(ligne[0]): tuple(ligne) for ligne in donnees}
+        self._afficher_lignes()
+
+    def _effacer_filtres(self):
+        self.texte_filtre.set("")
+        self.statut_filtre.set("Tous")
+
+    def _afficher_lignes(self):
+        if not hasattr(self, "table"):
+            return
         self.table.delete(*self.table.get_children())
         for iid, ligne in self.lignes.items():
+            texte = " ".join(_texte(valeur) for valeur in ligne).lower()
+            recherche = self.texte_filtre.get().strip().lower()
+            if recherche and recherche not in texte:
+                continue
+            if "Statut" in self.colonnes:
+                statut = _texte(ligne[self.colonnes.index("Statut")])
+                if self.statut_filtre.get() != "Tous" and statut != self.statut_filtre.get():
+                    continue
             self.table.insert("", "end", iid=iid, values=ligne)
 
     def _ligne_selectionnee(self):
@@ -469,6 +512,31 @@ def changer_statut_reclamation_ui(ligne):
     except services.ErreurMetier as err:
         messagebox.showerror("Statut refusé", str(err))
 
+class Parametres(ttk.Frame):
+    def __init__(self, parent, actualiser):
+        super().__init__(parent, padding=20)
+        ttk.Label(self, text="Paramètres de l'application",
+                  font=("TkDefaultFont", 14, "bold")).pack(anchor="w", pady=(0, 12))
+        ttk.Label(self, text="Actions d'administration rapides").pack(anchor="w", pady=(0, 8))
+        commandes = ttk.Frame(self)
+        commandes.pack(anchor="w")
+        ttk.Button(commandes, text="Créer une sauvegarde",
+                   command=self._sauvegarder).pack(side="left", padx=(0, 8))
+        ttk.Button(commandes, text="Actualiser l'onglet actif",
+                   command=actualiser).pack(side="left")
+        ttk.Label(
+            self,
+            text="Les sauvegardes sont enregistrées dans le dossier sauvegardes/.\n"
+                 "La configuration SMTP pourra être ajoutée ici ultérieurement.",
+        ).pack(anchor="w", pady=(18, 0))
+
+    def _sauvegarder(self):
+        chemin = sauvegarde.sauvegarder(force=True)
+        if chemin:
+            messagebox.showinfo("Sauvegarde", f"Sauvegarde créée :\n{chemin.name}")
+        else:
+            messagebox.showwarning("Sauvegarde", "La base de données est introuvable.")
+
 
 def creer_compte_resident_ui(ligne):
     identifiant = f"{ligne[2].lower()}_{ligne[0]}".replace(" ", "")
@@ -686,7 +754,7 @@ def lancer():
     tabs.add(Onglet(
         tabs,
         colonnes=("ID", "Copropriétaire", "Mois", "Date", "Montant dû", "Montant payé",
-                  "Impayé", "Statut", "Mode", "Échéance"),
+                  "Reste à payer", "Statut", "Mode", "Échéance"),
         lister=services.lister_paiements,
         nom="un paiement",
         champs=[
@@ -696,7 +764,8 @@ def lancer():
             Champ("date", "Date paiement :", "Date", date_iso(obligatoire=False)),
             Champ("du", "Montant dû :", "Montant dû", montant),
             Champ("paye", "Montant payé :", "Montant payé", montant),
-            Champ("mode", "Mode :", "Mode", texte(False)),
+            Champ("mode", "Mode :", "Mode", valeurs=("Espèce", "Virement", "Chèque"),
+                defaut="Virement"),
             Champ("echeance", "Échéance (AAAA-MM-JJ) :", "Échéance", date_iso(obligatoire=False)),
         ],
         # Le statut (Paye / En retard / Impaye) est calculé automatiquement
@@ -712,7 +781,9 @@ def lancer():
         champs=[
             Champ("date", "Date dépense :", "Date", date_iso(defaut_aujourdhui=True),
                   defaut=aujourdhui),
-            Champ("type", "Type :", "Type"),
+            Champ("type", "Type :", "Type", valeurs=(
+                "Entretien", "Réparation", "Électricité", "Eau", "Nettoyage",
+                "Assurance", "Honoraires", "Autre"), defaut="Entretien"),
             Champ("montant", "Montant :", "Montant", montant),
             Champ("desc", "Description :", "Description", texte(False)),
             Champ("valide", "Validé par :", "Validé par", texte(False)),
@@ -749,6 +820,20 @@ def lancer():
         colonnes=("ID", "Copropriétaire", "Date", "Type", "Message", "Statut"),
         lister=services.lister_rappels,
         nom="un rappel",
+          champs=[
+            Champ("cid", "Copropriétaire :", "Copropriétaire", id_du_choix,
+                valeurs=choix_coproprietaires),
+            Champ("date", "Date du rappel (AAAA-MM-JJ) :", "Date",
+                date_iso(defaut_aujourdhui=True), defaut=aujourdhui),
+            Champ("type", "Type :", "Type", valeurs=(
+                "Rappel de paiement", "Relance", "Information", "Autre"),
+                defaut="Rappel de paiement"),
+            Champ("message", "Message :", "Message", texte()),
+            Champ("statut", "Statut :", "Statut", valeurs=("En attente", "Envoye"),
+                defaut="En attente"),
+          ],
+          ajouter=services.enregistrer_rappel,
+          supprimer=None,
         actions=[
             ("Générer les rappels de retard", generer_rappels_ui, False),
             ("Escalader les relances", escalader_rappels_ui, False),
@@ -777,10 +862,16 @@ def lancer():
         lister=services.lister_journal,
     ), text="Journal")
 
+    def actualiser_onglet_actif():
+        widget = root.nametowidget(tabs.select())
+        if hasattr(widget, "rafraichir"):
+            widget.rafraichir()
+
+    tabs.add(Parametres(tabs, actualiser_onglet_actif), text="Paramètres")
+
     # Recharge l'onglet affiché à chaque changement d'onglet
     # (nouveaux copropriétaires dans la liste déroulante, données à jour…)
-    tabs.bind("<<NotebookTabChanged>>",
-              lambda _e: root.nametowidget(tabs.select()).rafraichir())
+    tabs.bind("<<NotebookTabChanged>>", lambda _e: actualiser_onglet_actif())
 
     root.mainloop()
 

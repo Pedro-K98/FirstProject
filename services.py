@@ -146,6 +146,17 @@ def generer_rappels(jour=None):
     return len(rappels)
 
 
+def enregistrer_rappel(coproprietaire_id, date_rappel, type_rappel, message, statut_envoi):
+    acteur = _exiger_admin()
+    if statut_envoi not in {STATUT_RAPPEL_EN_ATTENTE, STATUT_RAPPEL_ENVOYE}:
+        raise ErreurMetier("Statut de rappel invalide.")
+    if not type_rappel.strip() or not message.strip():
+        raise ErreurMetier("Le type et le message sont obligatoires.")
+    db.ajouter_rappel(coproprietaire_id, date_rappel, type_rappel.strip(),
+                      message.strip(), statut_envoi)
+    _journal(acteur, "ajout_rappel", f"Copropriétaire {coproprietaire_id}")
+
+
 def marquer_rappel_envoye(rappel_id, acteur=None):
     acteur = _exiger_admin_ou_anonyme(acteur)
     db.changer_statut_rappel(rappel_id, STATUT_RAPPEL_ENVOYE)

@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import db
 import services
+import sauvegarde
 
 
 class TestComptesUtilisateurs(unittest.TestCase):
@@ -115,6 +116,36 @@ class TestComptesUtilisateurs(unittest.TestCase):
         reclamation = db.lister_reclamations()[0]
         self.assertEqual(reclamation[5], "Résolue")
 
+    def test_migrations_appliquees(self):
+        connexion = sqlite3.connect(self.chemin)
+        try:
+            version = connexion.execute("PRAGMA user_version").fetchone()[0]
+            tables = {
+                ligne[0] for ligne in connexion.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+        finally:
+            connexion.close()
+        self.assertEqual(version, 10)
+        self.assertTrue({"Utilisateurs", "JournalActions", "Sessions"} <= tables)
+
+    def test_statuts_paiements_automatiques(self):
+        db.ajouter_paiement(self.coproprietaire_id, "2026-01", "2026-01-10",
+                            10000, 10000, "Paye", "Virement", "2026-01-31")
+        db.ajouter_paiement(self.coproprietaire_id, "2026-02", "2026-02-10",
+                            10000, 0, "Impaye", "Virement", "2026-02-01")
+        db.ajouter_paiement(self.coproprietaire_id, "2026-03", "2026-03-10",
+                            10000, 0, "Impaye", "Virement", "2026-12-31")
+        db.recalculer_statuts_paiements("2026-03-01")
+        statuts = [ligne[7] for ligne in db.lister_paiements()]
+        self.assertEqual(statuts, ["Impaye", "En retard", "Paye"])
+
+    def test_sauvegarde_forcee_cree_un_fichier(self):
+        destination = sauvegarde.sauvegarder(force=True)
+        self.assertIsNotNone(destination)
+        self.assertTrue(destination.exists())
+        self.assertGreater(destination.stat().st_size, 0)
+
     def test_escalade_des_rappels_generes(self):
         services.definir_utilisateur_connecte(self.admin)
         db.ajouter_paiement(self.coproprietaire_id, "2026-01", "2026-01-10",
@@ -126,6 +157,16 @@ class TestComptesUtilisateurs(unittest.TestCase):
         self.assertEqual(len(rappels), 2)
         self.assertEqual(rappels[0][3], "Retard de paiement")
         self.assertTrue(any("relance" in rappel[4].lower() for rappel in rappels))
+
+    def test_rappel_manuel_enregistre(self):
+        services.definir_utilisateur_connecte(self.admin)
+        services.enregistrer_rappel(
+            self.coproprietaire_id, "2026-02-10", "Information",
+            "Réunion de copropriété le 15 février.", "En attente")
+        rappels = db.lister_rappels()
+        self.assertEqual(len(rappels), 1)
+        self.assertEqual(rappels[0][3], "Information")
+        self.assertEqual(rappels[0][5], "En attente")
 
     @patch("smtplib.SMTP")
     def test_envoi_email_rappel(self, smtp_mock):
