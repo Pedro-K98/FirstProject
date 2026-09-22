@@ -150,15 +150,16 @@ def supprimer_coproprietaire(coproprietaire_id):
 # PAIEMENTS
 # ------------------------------------------------------------------
 def ajouter_paiement(coproprietaire_id, mois, date_paiement, montant_du,
-                     montant_paye, statut, mode_paiement, date_echeance):
+                     montant_paye, statut, mode_paiement, date_echeance,
+                     utilisateur_id=None):
     with closing(connexion()) as conn:
         conn.execute("""
             INSERT INTO Paiements
                 (CoproprietaireID, Mois, DatePaiement, MontantDu,
-                 MontantPaye, Statut, ModePaiement, DateEcheance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  MontantPaye, Statut, ModePaiement, DateEcheance, UtilisateurID)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (coproprietaire_id, mois, date_paiement, montant_du,
-              montant_paye, statut, mode_paiement, date_echeance))
+                montant_paye, statut, mode_paiement, date_echeance, utilisateur_id))
         conn.commit()
 
 
@@ -169,7 +170,7 @@ def lister_paiements():
             SELECT p.PaiementID, c.Nom || ' ' || COALESCE(c.Prenom, ''),
                    p.Mois, p.DatePaiement, p.MontantDu, p.MontantPaye,
                    ROUND(p.MontantDu - p.MontantPaye, 2) AS Impaye,
-                   p.Statut, p.ModePaiement, p.DateEcheance
+                   p.Statut, p.ModePaiement, p.DateEcheance, p.UtilisateurID
             FROM Paiements p
             JOIN Coproprietaires c ON c.CoproprietaireID = p.CoproprietaireID
             ORDER BY p.DatePaiement DESC
@@ -244,20 +245,24 @@ def paiements_en_retard_sans_rappel():
 # ------------------------------------------------------------------
 # DÉPENSES
 # ------------------------------------------------------------------
-def ajouter_depense(date_depense, type_depense, montant, description, valide_par):
+def ajouter_depense(date_depense, type_depense, montant, description, valide_par,
+                    utilisateur_id=None):
     with closing(connexion()) as conn:
         conn.execute("""
-            INSERT INTO Depenses (DateDepense, TypeDepense, Montant, Description, ValidePar)
-            VALUES (?, ?, ?, ?, ?)
-        """, (date_depense, type_depense, montant, description, valide_par))
+            INSERT INTO Depenses
+                (DateDepense, TypeDepense, Montant, Description, ValidePar, UtilisateurID)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (date_depense, type_depense, montant, description, valide_par, utilisateur_id))
         conn.commit()
 
 
 def lister_depenses():
     with closing(connexion()) as conn:
-        return conn.execute(
-            "SELECT * FROM Depenses ORDER BY DateDepense DESC"
-        ).fetchall()
+        return conn.execute("""
+            SELECT DepenseID, DateDepense, TypeDepense, Montant, Description,
+                   ValidePar, UtilisateurID
+            FROM Depenses ORDER BY DateDepense DESC
+        """).fetchall()
 
 
 def supprimer_depense(depense_id):
@@ -285,13 +290,14 @@ def depenses_par_type():
 # ------------------------------------------------------------------
 # RÉCLAMATIONS
 # ------------------------------------------------------------------
-def ajouter_reclamation(coproprietaire_id, date_reclamation, objet, description, statut):
+def ajouter_reclamation(coproprietaire_id, date_reclamation, objet, description,
+                        statut, priorite="Normale"):
     with closing(connexion()) as conn:
         curseur = conn.execute("""
             INSERT INTO Reclamations
-                (CoproprietaireID, DateReclamation, Objet, Description, Statut)
-            VALUES (?, ?, ?, ?, ?)
-        """, (coproprietaire_id, date_reclamation, objet, description, statut))
+                (CoproprietaireID, DateReclamation, Objet, Description, Statut, Priorite)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (coproprietaire_id, date_reclamation, objet, description, statut, priorite))
         conn.commit()
         return curseur.lastrowid
 
@@ -300,7 +306,7 @@ def lister_reclamations():
     with closing(connexion()) as conn:
         return conn.execute("""
             SELECT r.ReclamationID, c.Nom, r.DateReclamation, r.Objet,
-                   r.Description, r.Statut
+                   r.Description, r.Statut, r.Priorite
             FROM Reclamations r
             JOIN Coproprietaires c ON c.CoproprietaireID = r.CoproprietaireID
             ORDER BY r.DateReclamation DESC

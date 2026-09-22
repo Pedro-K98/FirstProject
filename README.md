@@ -50,7 +50,7 @@ Les tableaux disposent d'une recherche locale et de filtres par statut lorsque c
 python -m pytest -q
 ```
 
-Un résultat correct affiche actuellement `22 passed`.
+Un résultat correct affiche actuellement `24 passed`.
 
 ## Sauvegardes
 

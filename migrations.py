@@ -104,6 +104,27 @@ def _migration_historique_statuts(conn):
     """)
 
 
+def _migration_tracabilite_et_priorite(conn):
+    colonnes_paiements = {ligne[1] for ligne in conn.execute("PRAGMA table_info(Paiements)")}
+    if "UtilisateurID" not in colonnes_paiements:
+        conn.execute("ALTER TABLE Paiements ADD COLUMN UtilisateurID INTEGER")
+
+    colonnes_depenses = {ligne[1] for ligne in conn.execute("PRAGMA table_info(Depenses)")}
+    if "UtilisateurID" not in colonnes_depenses:
+        conn.execute("ALTER TABLE Depenses ADD COLUMN UtilisateurID INTEGER")
+
+    colonnes_reclamations = {ligne[1] for ligne in conn.execute("PRAGMA table_info(Reclamations)")}
+    if "Priorite" not in colonnes_reclamations:
+        conn.execute("ALTER TABLE Reclamations ADD COLUMN Priorite TEXT NOT NULL DEFAULT 'Normale'")
+
+    conn.executescript("""
+    CREATE INDEX IF NOT EXISTS idx_paiements_coproprietaire
+        ON Paiements(CoproprietaireID);
+    CREATE INDEX IF NOT EXISTS idx_reclamations_coproprietaire
+        ON Reclamations(CoproprietaireID);
+    """)
+
+
 MIGRATIONS = (
     (1, "comptes utilisateurs et journal", _migration_utilisateurs),
     (2, "conversion des montants en centimes", _migration_centimes),
@@ -111,6 +132,8 @@ MIGRATIONS = (
      _migration_comptes_phase_3),
     (10, "sessions utilisateurs", _migration_sessions),
     (11, "historique des statuts", _migration_historique_statuts),
+    (12, "traçabilité financière, priorité et index métier",
+     _migration_tracabilite_et_priorite),
 )
 
 

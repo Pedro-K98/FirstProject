@@ -75,12 +75,12 @@ def lister_paiements():
 
 
 def enregistrer_paiement(coproprietaire_id, mois, date_paiement, montant_du,
-                         montant_paye, mode_paiement, date_echeance):
+                         montant_paye, mode_paiement, date_echeance, acteur=None):
     """Enregistre un paiement ; le statut est calculé automatiquement (plus de saisie manuelle)."""
-    acteur = _exiger_admin()
+    acteur = _exiger_admin(acteur)
     db.ajouter_paiement(coproprietaire_id, mois, date_paiement,
                         en_centimes(montant_du), en_centimes(montant_paye),
-                        "Impaye", mode_paiement, date_echeance)
+                        "Impaye", mode_paiement, date_echeance, acteur[0])
     mettre_a_jour_statuts()
     _journal(acteur, "ajout_paiement", f"Copropriétaire {coproprietaire_id}, mois {mois}")
 
@@ -256,10 +256,11 @@ def envoyer_rappel_par_email(rappel_id, email_destinataire, smtp_host=None, smtp
 # ------------------------------------------------------------------
 # DEPENSES
 # ------------------------------------------------------------------
-def enregistrer_depense(date_depense, type_depense, montant, description, valide_par):
-    acteur = _exiger_admin()
+def enregistrer_depense(date_depense, type_depense, montant, description, valide_par,
+                        acteur=None):
+    acteur = _exiger_admin(acteur)
     db.ajouter_depense(date_depense, type_depense, en_centimes(montant),
-                       description, valide_par)
+                       description, valide_par, acteur[0])
     _journal(acteur, "ajout_depense", f"{type_depense}: {description}")
 
 
@@ -440,15 +441,19 @@ def lister_reclamations():
     return db.lister_reclamations()
 
 
-def ajouter_reclamation(coproprietaire_id, date_reclamation, objet, description, statut):
+def ajouter_reclamation(coproprietaire_id, date_reclamation, objet, description,
+                        statut, priorite="Normale"):
     acteur = _exiger_admin()
     statuts = {"En attente", "En cours", "Résolue", "Fermée"}
     if statut not in statuts:
         raise ErreurMetier("Statut de réclamation invalide.")
+    if priorite not in {"Basse", "Normale", "Haute", "Urgente"}:
+        raise ErreurMetier("Priorité de réclamation invalide.")
     if not objet.strip() or not description.strip():
         raise ErreurMetier("L'objet et la description sont obligatoires.")
     resultat = db.ajouter_reclamation(
-        coproprietaire_id, date_reclamation, objet.strip(), description.strip(), statut)
+        coproprietaire_id, date_reclamation, objet.strip(), description.strip(),
+        statut, priorite)
     _journal(acteur, "ajout_reclamation", objet.strip())
     return resultat
 

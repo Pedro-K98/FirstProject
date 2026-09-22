@@ -813,7 +813,7 @@ def lancer():
     tabs.add(Onglet(
         tabs,
         colonnes=("ID", "Copropriétaire", "Mois", "Date", "Montant dû", "Montant payé",
-                  "Reste à payer", "Statut", "Mode", "Échéance"),
+              "Reste à payer", "Statut", "Mode", "Échéance", "Saisi par"),
         lister=services.lister_paiements,
         nom="un paiement",
         champs=[
@@ -828,13 +828,14 @@ def lancer():
             Champ("echeance", "Échéance (AAAA-MM-JJ) :", "Échéance", date_iso(obligatoire=False)),
         ],
         # Le statut (Paye / En retard / Impaye) est calculé automatiquement
-        ajouter=services.enregistrer_paiement,
+        ajouter=lambda *args: services.enregistrer_paiement(
+            *args, services.utilisateur_connecte()),
         supprimer=services.supprimer_paiement,
     ), text="Paiements")
 
     tabs.add(Onglet(
         tabs,
-        colonnes=("ID", "Date", "Type", "Montant", "Description", "Validé par"),
+        colonnes=("ID", "Date", "Type", "Montant", "Description", "Validé par", "Saisi par"),
         lister=services.lister_depenses,
         nom="une dépense",
         champs=[
@@ -847,14 +848,15 @@ def lancer():
             Champ("desc", "Description :", "Description", texte(False)),
             Champ("valide", "Validé par :", "Validé par", texte(False)),
         ],
-        ajouter=services.enregistrer_depense,
+        ajouter=lambda *args: services.enregistrer_depense(
+            *args, services.utilisateur_connecte()),
         supprimer=services.supprimer_depense,
     ), text="Dépenses")
 
     # Onglets en lecture seule : pas de formulaire
     tabs.add(Onglet(
         tabs,
-        colonnes=("ID", "Copropriétaire", "Date", "Objet", "Description", "Statut"),
+        colonnes=("ID", "Copropriétaire", "Date", "Objet", "Description", "Statut", "Priorité"),
         lister=services.lister_reclamations,
         nom="une réclamation",
         champs=[
@@ -867,6 +869,9 @@ def lancer():
             Champ("statut", "Statut :", "Statut",
                   valeurs=("En attente", "En cours", "Résolue", "Fermée"),
                   defaut="En attente"),
+            Champ("priorite", "Priorité :", "Priorité",
+                valeurs=("Basse", "Normale", "Haute", "Urgente"),
+                defaut="Normale"),
         ],
         ajouter=services.ajouter_reclamation,
         supprimer=services.supprimer_reclamation,

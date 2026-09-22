@@ -135,8 +135,45 @@ class TestComptesUtilisateurs(unittest.TestCase):
             }
         finally:
             connexion.close()
-        self.assertEqual(version, 11)
+        self.assertEqual(version, 12)
         self.assertTrue({"Utilisateurs", "JournalActions", "Sessions", "HistoriqueStatuts"} <= tables)
+
+    def test_tracabilite_financiere_et_index(self):
+        services.definir_utilisateur_connecte(self.admin)
+        services.enregistrer_paiement(
+            self.coproprietaire_id, "2026-04", "2026-04-10", 100, 50,
+            "Virement", "2026-04-30", self.admin)
+        services.enregistrer_depense(
+            "2026-04-11", "Entretien", 25, "Nettoyage", "Syndic", self.admin)
+        connexion = sqlite3.connect(self.chemin)
+        try:
+            paiement_user = connexion.execute(
+                "SELECT UtilisateurID FROM Paiements").fetchone()[0]
+            depense_user = connexion.execute(
+                "SELECT UtilisateurID FROM Depenses").fetchone()[0]
+            index = {
+                ligne[1] for ligne in connexion.execute(
+                    "SELECT name, tbl_name FROM sqlite_master "
+                    "WHERE type = 'index' AND sql IS NOT NULL")
+            }
+        finally:
+            connexion.close()
+        self.assertEqual(paiement_user, self.admin[0])
+        self.assertEqual(depense_user, self.admin[0])
+        self.assertTrue({"Paiements", "Reclamations"} <= index)
+
+    def test_priorite_reclamation_validee(self):
+        services.definir_utilisateur_connecte(self.admin)
+        reclamation_id = services.ajouter_reclamation(
+            self.coproprietaire_id, "2026-02-01", "Urgence", "Ascenseur en panne",
+            "En attente", "Urgente")
+        ligne = db.lister_reclamations()[0]
+        self.assertEqual(ligne[0], reclamation_id)
+        self.assertEqual(ligne[6], "Urgente")
+        with self.assertRaises(services.ErreurMetier):
+            services.ajouter_reclamation(
+                self.coproprietaire_id, "2026-02-01", "Test", "Test",
+                "En attente", "Critique")
 
     def test_statuts_paiements_automatiques(self):
         db.ajouter_paiement(self.coproprietaire_id, "2026-01", "2026-01-10",
