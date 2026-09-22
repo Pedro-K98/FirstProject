@@ -40,7 +40,9 @@ form.addEventListener("submit", async (event) => {
     status.classList.remove("success");
     status.textContent = error instanceof TypeError
       ? "API indisponible. Lancez le serveur Amana sur le port 8000."
-      : error.message;
+      : error.message.includes("Identifiants invalides")
+        ? "Utilisez un compte résident. Le compte admin se connecte dans l'application desktop."
+        : error.message;
   } finally {
     submit.disabled = false;
     submit.querySelector("span").textContent = "Se connecter";
