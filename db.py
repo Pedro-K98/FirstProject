@@ -6,9 +6,11 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+import config
+
 # La base est toujours créée/lue à côté de ce fichier, même si l'on lance
 # le programme depuis un autre dossier.
-DB_NAME = str(Path(__file__).resolve().parent / "syndic.db")
+DB_NAME = config.DB_NAME
 
 # Colonnes de Coproprietaires que l'on a le droit de modifier
 # (liste blanche : évite toute injection SQL via le nom de colonne)
@@ -47,8 +49,8 @@ def initialiser_base():
             CoproprietaireID INTEGER NOT NULL,
             Mois             TEXT,
             DatePaiement     TEXT,
-            MontantDu        REAL CHECK (MontantDu >= 0),
-            MontantPaye      REAL CHECK (MontantPaye >= 0),
+            MontantDu        INTEGER CHECK (MontantDu >= 0),
+            MontantPaye      INTEGER CHECK (MontantPaye >= 0),
             Statut           TEXT,                -- Paye / En retard / Impaye
             ModePaiement     TEXT,
             DateEcheance     TEXT,
@@ -59,7 +61,7 @@ def initialiser_base():
             DepenseID   INTEGER PRIMARY KEY AUTOINCREMENT,
             DateDepense TEXT,
             TypeDepense TEXT,
-            Montant     REAL CHECK (Montant >= 0),
+            Montant     INTEGER CHECK (Montant >= 0),
             Description TEXT,
             ValidePar   TEXT
         );
@@ -374,3 +376,70 @@ def lister_rappels():
             JOIN Coproprietaires c ON c.CoproprietaireID = r.CoproprietaireID
             ORDER BY r.DateRappel DESC
         """).fetchall()
+
+
+# ------------------------------------------------------------------
+# UTILISATEURS ET JOURNAL
+# ------------------------------------------------------------------
+def creer_utilisateur(coproprietaire_id, identifiant, mot_de_passe_hache,
+                      sel, role, date_creation):
+    with closing(connexion()) as conn:
+        curseur = conn.execute("""
+            INSERT INTO Utilisateurs
+                (CoproprietaireID, Identifiant, MotDePasseHache, Sel,
+                 Role, Actif, DateCreation)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+        """, (coproprietaire_id, identifiant, mot_de_passe_hache, sel,
+              role, date_creation))
+        conn.commit()
+        return curseur.lastrowid
+
+
+def utilisateur_par_identifiant(identifiant):
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT UtilisateurID, CoproprietaireID, Identifiant,
+                   MotDePasseHache, Sel, Role, Actif, DateCreation
+            FROM Utilisateurs WHERE Identifiant = ?
+        """, (identifiant,)).fetchone()
+
+
+def utilisateur_par_id(utilisateur_id):
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT UtilisateurID, CoproprietaireID, Identifiant,
+                   MotDePasseHache, Sel, Role, Actif, DateCreation
+            FROM Utilisateurs WHERE UtilisateurID = ?
+        """, (utilisateur_id,)).fetchone()
+
+
+def modifier_mot_de_passe(utilisateur_id, mot_de_passe_hache, sel):
+    with closing(connexion()) as conn:
+        conn.execute("""
+            UPDATE Utilisateurs SET MotDePasseHache = ?, Sel = ?
+            WHERE UtilisateurID = ?
+        """, (mot_de_passe_hache, sel, utilisateur_id))
+        conn.commit()
+
+
+def desactiver_utilisateur(utilisateur_id):
+    with closing(connexion()) as conn:
+        conn.execute("UPDATE Utilisateurs SET Actif = 0 WHERE UtilisateurID = ?",
+                     (utilisateur_id,))
+        conn.commit()
+
+
+def compter_administrateurs():
+    with closing(connexion()) as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM Utilisateurs WHERE Role = 'Admin'"
+        ).fetchone()[0]
+
+
+def journaliser(utilisateur_id, action, details, date_heure):
+    with closing(connexion()) as conn:
+        conn.execute("""
+            INSERT INTO JournalActions (UtilisateurID, Action, Details, DateHeure)
+            VALUES (?, ?, ?, ?)
+        """, (utilisateur_id, action, details, date_heure))
+        conn.commit()

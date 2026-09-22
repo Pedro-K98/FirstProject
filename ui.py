@@ -1,14 +1,13 @@
 """Interface Tkinter - Application Syndic (version optimisée, adaptée à db.py)."""
 import re
-import sqlite3
+import secrets
 import tkinter as tk
 import tkinter.font as tkfont
 from dataclasses import dataclass
 from datetime import date, datetime
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 from typing import Callable
 
-import db
 import services
 
 
@@ -246,18 +245,14 @@ class Onglet(ttk.Frame):
             return None
         return self.lignes[selection[0]]
 
-    def _appeler_db(self, fonction, *args):
+    def _appeler_service(self, fonction, *args):
         try:
             fonction(*args)
             return True
-        except sqlite3.IntegrityError as err:
-            messagebox.showerror(
-                "Opération impossible",
-                "Cette opération viole une contrainte de la base "
-                "(élément lié à d'autres données, valeur interdite…).\n\n"
-                f"Détail : {err}")
+        except services.ErreurMetier as err:
+            messagebox.showerror("Opération impossible", str(err))
         except Exception as err:
-            messagebox.showerror("Erreur base de données", str(err))
+            messagebox.showerror("Opération impossible", "L'opération n'a pas pu être effectuée.")
         return False
 
     # ---------- actions ----------
@@ -265,14 +260,14 @@ class Onglet(ttk.Frame):
         valeurs = self._lire_formulaire()
         if valeurs is None:
             return
-        if self._appeler_db(self.ajouter, *valeurs.values()):
+        if self._appeler_service(self.ajouter, *valeurs.values()):
             self._vider()
             self.rafraichir()
 
     def _supprimer(self):
         ligne = self._ligne_selectionnee()
         if ligne and messagebox.askyesno("Confirmation", f"Supprimer {self.nom} n° {ligne[0]} ?"):
-            if self._appeler_db(self.supprimer, ligne[0]):
+            if self._appeler_service(self.supprimer, ligne[0]):
                 self._vider()
                 self.rafraichir()
 
@@ -283,7 +278,7 @@ class Onglet(ttk.Frame):
             if ligne is None:
                 return
             args = (ligne,)
-        if self._appeler_db(fonction, *args):
+        if self._appeler_service(fonction, *args):
             self.rafraichir()
 
     def _charger_selection(self, _event=None):
@@ -311,7 +306,7 @@ class Onglet(ttk.Frame):
             messagebox.showinfo("Modification", "Aucune modification détectée.")
             return
         for champ_db, valeur in modifies:
-            if not self._appeler_db(self.modifier, ligne[0], champ_db, valeur):
+            if not self._appeler_service(self.modifier, ligne[0], champ_db, valeur):
                 break
         self.rafraichir()
 
@@ -421,7 +416,7 @@ class TableauDeBord(ttk.Frame):
 def choix_coproprietaires():
     return [
         f"{c[0]} - {c[2]} {c[3] or ''}".strip()
-        for c in db.lister_coproprietaires() if c[9] != 0
+        for c in services.lister_coproprietaires() if c[9] != 0
     ]
 
 
@@ -432,16 +427,100 @@ def generer_rappels_ui():
         f"{nb} rappel(s) créé(s)." if nb else "Aucun nouveau rappel à créer.")
 
 
+def creer_compte_resident_ui(ligne):
+    identifiant = f"{ligne[2].lower()}_{ligne[0]}".replace(" ", "")
+    mot_de_passe = simpledialog.askstring(
+        "Compte résident",
+        f"Identifiant généré : {identifiant}\nMot de passe (vide = générer) :",
+        show="*",
+    )
+    if mot_de_passe is None:
+        return
+    mot_de_passe = mot_de_passe or secrets.token_urlsafe(9)
+    try:
+        services.creer_utilisateur(
+            identifiant, mot_de_passe, role="Resident",
+            coproprietaire_id=ligne[0], acteur=services.utilisateur_connecte())
+    except services.ErreurMetier as err:
+        messagebox.showerror("Compte résident", str(err))
+        return
+    messagebox.showinfo(
+        "Compte résident créé",
+        f"Identifiant : {identifiant}\nMot de passe : {mot_de_passe}")
+
+
+def _creer_premier_admin(parent):
+    identifiant = simpledialog.askstring("Premier administrateur", "Identifiant :", parent=parent)
+    mot_de_passe = simpledialog.askstring(
+        "Premier administrateur", "Mot de passe (8 caractères minimum) :",
+        show="*", parent=parent)
+    if identifiant is None or mot_de_passe is None:
+        return False
+    try:
+        services.creer_utilisateur(identifiant, mot_de_passe, role="Admin")
+    except services.ErreurMetier as err:
+        messagebox.showerror("Création du compte", str(err), parent=parent)
+        return False
+    messagebox.showinfo("Compte créé", "Le premier compte administrateur est prêt.", parent=parent)
+    return True
+
+
+def demander_connexion(parent):
+    resultat = []
+    fenetre = tk.Toplevel(parent)
+    fenetre.title("Connexion administrateur")
+    fenetre.resizable(False, False)
+    fenetre.protocol("WM_DELETE_WINDOW", fenetre.destroy)
+    identifiant = tk.StringVar()
+    mot_de_passe = tk.StringVar()
+    cadre = ttk.Frame(fenetre, padding=20)
+    cadre.pack()
+    ttk.Label(cadre, text="Identifiant :").grid(row=0, column=0, sticky="w", pady=4)
+    entree_identifiant = ttk.Entry(cadre, textvariable=identifiant, width=28)
+    entree_identifiant.grid(row=0, column=1, pady=4)
+    ttk.Label(cadre, text="Mot de passe :").grid(row=1, column=0, sticky="w", pady=4)
+    entree_mot_de_passe = ttk.Entry(cadre, textvariable=mot_de_passe, show="*", width=28)
+    entree_mot_de_passe.grid(row=1, column=1, pady=4)
+
+    def connecter():
+        utilisateur = services.verifier_identifiants(identifiant.get(), mot_de_passe.get())
+        if not utilisateur or utilisateur[5] != "Admin":
+            messagebox.showerror("Connexion refusée", "Identifiant ou mot de passe incorrect.", parent=fenetre)
+            return
+        resultat.append(utilisateur)
+        fenetre.destroy()
+
+    ttk.Button(cadre, text="Se connecter", command=connecter).grid(
+        row=2, column=0, columnspan=2, sticky="ew", pady=(10, 4))
+    if services.compter_administrateurs() == 0:
+        ttk.Button(cadre, text="Créer le premier administrateur",
+                   command=lambda: _creer_premier_admin(fenetre)).grid(
+                       row=3, column=0, columnspan=2, sticky="ew")
+    entree_identifiant.focus_set()
+    fenetre.transient(parent)
+    fenetre.grab_set()
+    parent.wait_window(fenetre)
+    return resultat[0] if resultat else None
+
+
 # ---------------------------------------------------------------
 # Interface principale
 # ---------------------------------------------------------------
 def lancer():
-    db.initialiser_base()  # idempotent : crée les tables manquantes et applique les migrations
+    services.initialiser_base()
 
     root = tk.Tk()
     root.title("Application Syndic")
     root.geometry("1100x650")
     root.minsize(900, 550)
+
+    root.withdraw()
+    utilisateur = demander_connexion(root)
+    if utilisateur is None:
+        root.destroy()
+        return
+    services.definir_utilisateur_connecte(utilisateur)
+    root.deiconify()
 
     aujourdhui = date.today().isoformat()
     tabs = ttk.Notebook(root)
@@ -453,7 +532,7 @@ def lancer():
         tabs,
         colonnes=("ID", "Type", "Nom", "Prénom", "Email", "Téléphone",
                   "Appartement", "Situation", "Date", "Actif"),
-        lister=db.lister_coproprietaires,
+        lister=services.lister_coproprietaires,
         nom="un copropriétaire",
         champs=[
             Champ("type", "Type :", "Type", valeurs=("Coproprietaire", "Locataire"),
@@ -470,9 +549,10 @@ def lancer():
             Champ("actif", "Actif (1 = oui, 0 = non) :", "Actif", actif,
                   valeurs=("1", "0"), defaut="1", champ_db="Actif"),
         ],
-        ajouter=db.ajouter_coproprietaire,
-        supprimer=db.supprimer_coproprietaire,
-        modifier=db.modifier_coproprietaire,
+        ajouter=services.ajouter_coproprietaire,
+        supprimer=services.supprimer_coproprietaire,
+        modifier=services.modifier_coproprietaire,
+        actions=[("Créer un compte résident", creer_compte_resident_ui, True)],
     ), text="Copropriétaires")
 
     tabs.add(Onglet(
@@ -493,13 +573,13 @@ def lancer():
         ],
         # Le statut (Paye / En retard / Impaye) est calculé automatiquement
         ajouter=services.enregistrer_paiement,
-        supprimer=db.supprimer_paiement,
+        supprimer=services.supprimer_paiement,
     ), text="Paiements")
 
     tabs.add(Onglet(
         tabs,
         colonnes=("ID", "Date", "Type", "Montant", "Description", "Validé par"),
-        lister=db.lister_depenses,
+        lister=services.lister_depenses,
         nom="une dépense",
         champs=[
             Champ("date", "Date dépense :", "Date", date_iso(defaut_aujourdhui=True),
@@ -509,21 +589,21 @@ def lancer():
             Champ("desc", "Description :", "Description", texte(False)),
             Champ("valide", "Validé par :", "Validé par", texte(False)),
         ],
-        ajouter=db.ajouter_depense,
-        supprimer=db.supprimer_depense,
+        ajouter=services.enregistrer_depense,
+        supprimer=services.supprimer_depense,
     ), text="Dépenses")
 
     # Onglets en lecture seule : pas de formulaire
     tabs.add(Onglet(
         tabs,
         colonnes=("ID", "Copropriétaire", "Date", "Objet", "Description", "Statut"),
-        lister=db.lister_reclamations,
+        lister=services.lister_reclamations,
     ), text="Réclamations")
 
     tabs.add(Onglet(
         tabs,
         colonnes=("ID", "Copropriétaire", "Date", "Type", "Message", "Statut"),
-        lister=db.lister_rappels,
+        lister=services.lister_rappels,
         nom="un rappel",
         actions=[
             ("Générer les rappels de retard", generer_rappels_ui, False),
