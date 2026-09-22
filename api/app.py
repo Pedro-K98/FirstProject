@@ -12,7 +12,7 @@ def creer_application():
     application = FastAPI(title="Amana Resident API", version="1.0.0")
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[config.PWA_ORIGINE],
+        allow_origins=list(config.PWA_ORIGINES),
         allow_credentials=True,
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type"],

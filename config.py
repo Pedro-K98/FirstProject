@@ -17,7 +17,13 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
 SMTP_UTILISATEUR = os.environ.get("SMTP_UTILISATEUR", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_EXPEDITEUR = os.environ.get("SMTP_EXPEDITEUR", "syndic@syndic.local")
-PWA_ORIGINE = os.environ.get("PWA_ORIGINE", "http://localhost:5173")
+PWA_ORIGINES = tuple(
+	origine.strip() for origine in os.environ.get(
+		"PWA_ORIGINES", "http://localhost:5173,http://127.0.0.1:5173"
+	).split(",") if origine.strip()
+)
+# Compatibilité avec les intégrations qui lisent encore ce nom singulier.
+PWA_ORIGINE = PWA_ORIGINES[0]
 
 # L'ancien nom reste disponible pour les modules existants.
 DB_NAME = str(CHEMIN_BASE)
