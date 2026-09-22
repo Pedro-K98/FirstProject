@@ -116,6 +116,15 @@ class TestComptesUtilisateurs(unittest.TestCase):
         reclamation = db.lister_reclamations()[0]
         self.assertEqual(reclamation[5], "Résolue")
 
+    def test_historique_reclamation_est_enregistre(self):
+        reclamation_id = db.ajouter_reclamation(
+            self.coproprietaire_id, "2026-01-15", "Plomberie", "Fuite", "En attente")
+        services.definir_utilisateur_connecte(self.admin)
+        services.changer_statut_reclamation(reclamation_id, "En cours")
+        historique = db.lister_historique_statuts("Reclamation", reclamation_id)
+        self.assertEqual(len(historique), 1)
+        self.assertEqual(historique[0][3:5], ("En attente", "En cours"))
+
     def test_migrations_appliquees(self):
         connexion = sqlite3.connect(self.chemin)
         try:
@@ -126,8 +135,8 @@ class TestComptesUtilisateurs(unittest.TestCase):
             }
         finally:
             connexion.close()
-        self.assertEqual(version, 10)
-        self.assertTrue({"Utilisateurs", "JournalActions", "Sessions"} <= tables)
+        self.assertEqual(version, 11)
+        self.assertTrue({"Utilisateurs", "JournalActions", "Sessions", "HistoriqueStatuts"} <= tables)
 
     def test_statuts_paiements_automatiques(self):
         db.ajouter_paiement(self.coproprietaire_id, "2026-01", "2026-01-10",
@@ -145,6 +154,24 @@ class TestComptesUtilisateurs(unittest.TestCase):
         self.assertIsNotNone(destination)
         self.assertTrue(destination.exists())
         self.assertGreater(destination.stat().st_size, 0)
+
+    def test_restauration_cree_une_securite(self):
+        destination = sauvegarde.sauvegarder(force=True)
+        db.ajouter_coproprietaire(
+            "Locataire", "Temporaire", "Test", "", "", "Z9", "", "2026-01-01", 1)
+        services.definir_utilisateur_connecte(self.admin)
+        securite = services.restaurer_sauvegarde(destination.name)
+        noms = [ligne[2] for ligne in db.lister_coproprietaires()]
+        self.assertNotIn("Temporaire", noms)
+        self.assertTrue((self.sauvegardes / securite).exists())
+
+    def test_restauration_refuse_resident(self):
+        destination = sauvegarde.sauvegarder(force=True)
+        resident = services.creer_utilisateur(
+            "resident2", "motdepasse-solide", "Resident", self.coproprietaire_id, self.admin)
+        services.definir_utilisateur_connecte(resident)
+        with self.assertRaises(services.ErreurMetier):
+            services.restaurer_sauvegarde(destination.name)
 
     def test_escalade_des_rappels_generes(self):
         services.definir_utilisateur_connecte(self.admin)
@@ -175,7 +202,8 @@ class TestComptesUtilisateurs(unittest.TestCase):
                             10000, 0, "Impaye", "Virement", "2026-01-31")
         services.generer_rappels("2026-02-05")
         rappel = db.lister_rappels()[0]
-        avec_email = services.envoyer_rappel_par_email(rappel[0], "test@example.com")
+        with patch("config.ENVOI_EMAIL_REEL", True):
+            avec_email = services.envoyer_rappel_par_email(rappel[0], "test@example.com")
         self.assertTrue(avec_email)
         smtp_mock.return_value.sendmail.assert_called_once()
 

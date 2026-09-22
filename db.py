@@ -314,6 +314,50 @@ def changer_statut_reclamation(reclamation_id, nouveau_statut):
         conn.commit()
 
 
+def statut_reclamation(reclamation_id):
+    with closing(connexion()) as conn:
+        ligne = conn.execute(
+            "SELECT Statut FROM Reclamations WHERE ReclamationID = ?",
+            (reclamation_id,),
+        ).fetchone()
+        return ligne[0] if ligne else None
+
+
+def ajouter_historique_statut(type_element, element_id, ancien_statut,
+                              nouveau_statut, utilisateur_id, date_heure):
+    with closing(connexion()) as conn:
+        conn.execute("""
+            INSERT INTO HistoriqueStatuts
+                (TypeElement, ElementID, AncienStatut, NouveauStatut,
+                 UtilisateurID, DateHeure)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (type_element, element_id, ancien_statut, nouveau_statut,
+              utilisateur_id, date_heure))
+        conn.commit()
+
+
+def lister_historique_statuts(type_element=None, element_id=None):
+    clauses = []
+    valeurs = []
+    if type_element is not None:
+        clauses.append("h.TypeElement = ?")
+        valeurs.append(type_element)
+    if element_id is not None:
+        clauses.append("h.ElementID = ?")
+        valeurs.append(element_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with closing(connexion()) as conn:
+        return conn.execute(f"""
+            SELECT h.HistoriqueStatutID, h.TypeElement, h.ElementID,
+                   h.AncienStatut, h.NouveauStatut, h.UtilisateurID,
+                   h.DateHeure, COALESCE(u.Identifiant, '(supprimé)')
+            FROM HistoriqueStatuts h
+            LEFT JOIN Utilisateurs u ON u.UtilisateurID = h.UtilisateurID
+            {where}
+            ORDER BY h.DateHeure DESC, h.HistoriqueStatutID DESC
+        """, valeurs).fetchall()
+
+
 def supprimer_reclamation(reclamation_id):
     with closing(connexion()) as conn:
         conn.execute("DELETE FROM Reclamations WHERE ReclamationID = ?", (reclamation_id,))

@@ -512,6 +512,28 @@ def changer_statut_reclamation_ui(ligne):
     except services.ErreurMetier as err:
         messagebox.showerror("Statut refusé", str(err))
 
+
+def historique_reclamation_ui(ligne):
+    historique = services.lister_historique_statuts("Reclamation", ligne[0])
+    fenetre = tk.Toplevel()
+    fenetre.title(f"Historique de la réclamation n° {ligne[0]}")
+    fenetre.geometry("760x300")
+    table = ttk.Treeview(
+        fenetre,
+        columns=("Date", "Ancien statut", "Nouveau statut", "Utilisateur"),
+        show="headings",
+    )
+    for colonne in table["columns"]:
+        table.heading(colonne, text=colonne)
+        table.column(colonne, width=170, anchor="w")
+    for historique_ligne in historique:
+        table.insert("", "end", values=(
+            historique_ligne[6], historique_ligne[3] or "(initial)",
+            historique_ligne[4], historique_ligne[7],
+        ))
+    table.pack(fill="both", expand=True, padx=10, pady=10)
+
+
 class Parametres(ttk.Frame):
     def __init__(self, parent, actualiser):
         super().__init__(parent, padding=20)
@@ -522,6 +544,8 @@ class Parametres(ttk.Frame):
         commandes.pack(anchor="w")
         ttk.Button(commandes, text="Créer une sauvegarde",
                    command=self._sauvegarder).pack(side="left", padx=(0, 8))
+        ttk.Button(commandes, text="Restaurer une sauvegarde",
+               command=self._restaurer).pack(side="left", padx=(0, 8))
         ttk.Button(commandes, text="Actualiser l'onglet actif",
                    command=actualiser).pack(side="left")
         ttk.Label(
@@ -536,6 +560,41 @@ class Parametres(ttk.Frame):
             messagebox.showinfo("Sauvegarde", f"Sauvegarde créée :\n{chemin.name}")
         else:
             messagebox.showwarning("Sauvegarde", "La base de données est introuvable.")
+
+    def _restaurer(self):
+        sauvegardes = services.lister_sauvegardes()
+        if not sauvegardes:
+            messagebox.showinfo("Restauration", "Aucune sauvegarde disponible.")
+            return
+        fenetre = tk.Toplevel(self)
+        fenetre.title("Restaurer une sauvegarde")
+        fenetre.geometry("560x180")
+        ttk.Label(fenetre, text="Sélectionnez une sauvegarde :").pack(anchor="w", padx=15, pady=(15, 5))
+        noms = [ligne[0] for ligne in sauvegardes]
+        selection = tk.StringVar(value=noms[0])
+        ttk.Combobox(fenetre, textvariable=selection, values=noms,
+                     state="readonly", width=58).pack(padx=15, fill="x")
+
+        def restaurer():
+            nom = selection.get()
+            avertissement = (
+                "Cette action remplacera toutes les données actuelles.\n"
+                "Une sauvegarde de sécurité sera créée automatiquement. Continuer ?"
+            )
+            if not messagebox.askyesno("Confirmation 1/2", avertissement, parent=fenetre):
+                return
+            if not messagebox.askyesno(
+                    "Confirmation 2/2", f"Confirmer la restauration de {nom} ?", parent=fenetre):
+                return
+            try:
+                securite = services.restaurer_sauvegarde(nom)
+            except services.ErreurMetier as err:
+                messagebox.showerror("Restauration impossible", str(err), parent=fenetre)
+                return
+            fenetre.destroy()
+            messagebox.showinfo("Restauration terminée", f"Sauvegarde de sécurité : {securite}")
+
+        ttk.Button(fenetre, text="Restaurer", command=restaurer).pack(pady=15)
 
 
 def creer_compte_resident_ui(ligne):

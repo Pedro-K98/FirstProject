@@ -88,12 +88,29 @@ def _migration_sessions(conn):
     """)
 
 
+def _migration_historique_statuts(conn):
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS HistoriqueStatuts (
+        HistoriqueStatutID INTEGER PRIMARY KEY AUTOINCREMENT,
+        TypeElement TEXT NOT NULL CHECK (TypeElement IN ('Reclamation', 'Appel')),
+        ElementID INTEGER NOT NULL,
+        AncienStatut TEXT,
+        NouveauStatut TEXT NOT NULL,
+        UtilisateurID INTEGER,
+        DateHeure TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_historique_element
+        ON HistoriqueStatuts(TypeElement, ElementID, DateHeure DESC);
+    """)
+
+
 MIGRATIONS = (
     (1, "comptes utilisateurs et journal", _migration_utilisateurs),
     (2, "conversion des montants en centimes", _migration_centimes),
     (9, "comptes administrateur et changement de mot de passe obligatoire",
      _migration_comptes_phase_3),
     (10, "sessions utilisateurs", _migration_sessions),
+    (11, "historique des statuts", _migration_historique_statuts),
 )
 
 

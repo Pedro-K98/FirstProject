@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import hmac
 import os
+import shutil
 import secrets
 import smtplib
 import sqlite3
@@ -23,6 +24,7 @@ import sqlite3
 import config
 import db
 import migrations
+import sauvegarde
 
 DEVISE = config.DEVISE
 TYPE_RAPPEL_RETARD = "Retard de paiement"
@@ -201,9 +203,9 @@ def escalader_rappels(jour=None):
     return len(rappels)
 
 
-def envoyer_rappel_par_email(rappel_id, email_destinataire, smtp_host="localhost", smtp_port=25):
-    """Simule un envoi d’e-mail SMTP et marque le rappel comme envoyé."""
-    _exiger_admin()
+def envoyer_rappel_par_email(rappel_id, email_destinataire, smtp_host=None, smtp_port=None):
+    """Envoie un rappel en SMTP réel ou le simule selon la configuration."""
+    acteur = _exiger_admin()
     with closing(db.connexion()) as conn:
         rappel = conn.execute("""
             SELECT r.RappelID, c.Email, r.Message, c.Nom, COALESCE(c.Prenom, '')
@@ -220,15 +222,34 @@ def envoyer_rappel_par_email(rappel_id, email_destinataire, smtp_host="localhost
 
     objet = "Rappel de paiement"
     corps = f"Objet : {objet}\n\n{rappel[2]}"
-    message = f"From: syndic@syndic.local\nTo: {destinataire}\nSubject: {objet}\n\n{corps}"
+    expediteur = config.SMTP_EXPEDITEUR
+    message = f"From: {expediteur}\nTo: {destinataire}\nSubject: {objet}\n\n{corps}"
 
-    serveur = smtplib.SMTP(smtp_host, smtp_port)
+    if not config.ENVOI_EMAIL_REEL:
+        db.changer_statut_rappel(rappel_id, STATUT_RAPPEL_ENVOYE)
+        _journal(acteur, "simulation_email_rappel", str(rappel_id))
+        return True
+
+    serveur = None
     try:
-        serveur.sendmail("syndic@syndic.local", [destinataire], message)
+        serveur = smtplib.SMTP(
+            smtp_host or config.SMTP_SERVEUR,
+            smtp_port or config.SMTP_PORT,
+            timeout=15,
+        )
+        if config.SMTP_UTILISATEUR:
+            serveur.starttls()
+            serveur.login(config.SMTP_UTILISATEUR, config.SMTP_PASSWORD)
+        serveur.sendmail(expediteur, [destinataire], message)
+    except (OSError, smtplib.SMTPException) as err:
+        _journal(acteur, "echec_email_rappel", f"{rappel_id}: {type(err).__name__}")
+        return False
     finally:
-        serveur.quit()
+        if serveur is not None:
+            serveur.quit()
 
     db.changer_statut_rappel(rappel_id, STATUT_RAPPEL_ENVOYE)
+    _journal(acteur, "email_rappel_envoye", str(rappel_id))
     return True
 
 
@@ -443,7 +464,48 @@ def changer_statut_reclamation(reclamation_id, nouveau_statut):
     """Met à jour le statut d'une réclamation. Permet un usage sans session admin pour les tâches internes."""
     if nouveau_statut not in {"En attente", "En cours", "Résolue", "Fermée"}:
         raise ErreurMetier("Statut de réclamation invalide.")
+    ancien_statut = db.statut_reclamation(reclamation_id)
+    if ancien_statut is None:
+        raise ErreurMetier("Réclamation introuvable.")
     db.changer_statut_reclamation(reclamation_id, nouveau_statut)
+    acteur = _acteur()
+    db.ajouter_historique_statut(
+        "Reclamation", reclamation_id, ancien_statut, nouveau_statut,
+        acteur[0] if acteur else None, datetime.now().isoformat(timespec="seconds"))
+
+
+def lister_historique_statuts(type_element=None, element_id=None):
+    _exiger_admin()
+    return db.lister_historique_statuts(type_element, element_id)
+
+
+def lister_sauvegardes():
+    _exiger_admin()
+    return [
+        (f.name, datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds"), f.stat().st_size)
+        for f in sauvegarde.lister_sauvegardes()
+    ]
+
+
+def restaurer_sauvegarde(nom_fichier, acteur=None):
+    acteur = _exiger_admin(acteur)
+    fichiers = {f.name: f for f in sauvegarde.lister_sauvegardes()}
+    source = fichiers.get(nom_fichier)
+    if source is None:
+        raise ErreurMetier("Sauvegarde introuvable.")
+    securite = sauvegarde.sauvegarde_securite()
+    if securite is None:
+        raise ErreurMetier("Impossible de créer la sauvegarde de sécurité.")
+    temporaire = config.CHEMIN_BASE.with_suffix(".restore.tmp")
+    try:
+        shutil.copy2(source, temporaire)
+        os.replace(temporaire, config.CHEMIN_BASE)
+    finally:
+        if temporaire.exists():
+            temporaire.unlink()
+    db.journaliser(acteur[0], "restauration_sauvegarde", nom_fichier,
+                   datetime.now().isoformat(timespec="seconds"))
+    return securite.name
 
 
 def lister_rappels():
