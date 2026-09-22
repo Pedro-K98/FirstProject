@@ -581,6 +581,14 @@ def lancer():
         root.destroy()
         return
     services.definir_utilisateur_connecte(utilisateur)
+    jeton_session = services.creer_session(utilisateur, appareil="Tkinter")
+    services.definir_jeton_session(jeton_session)
+
+    def fermer_application():
+        services.revoquer_session(jeton_session)
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", fermer_application)
     root.deiconify()
 
     if utilisateur[5] == "Resident":

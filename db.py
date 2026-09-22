@@ -513,3 +513,70 @@ def lister_rappels_pour_coproprietaire(coproprietaire_id):
             FROM Rappels WHERE CoproprietaireID = ?
             ORDER BY DateRappel DESC
         """, (coproprietaire_id,)).fetchall()
+
+
+# ------------------------------------------------------------------
+# SESSIONS
+# ------------------------------------------------------------------
+def creer_session(utilisateur_id, jeton_hash, date_creation, date_expiration,
+                  appareil):
+    with closing(connexion()) as conn:
+        curseur = conn.execute("""
+            INSERT INTO Sessions
+                (UtilisateurID, JetonHash, DateCreation, DateExpiration,
+                 DateRevocation, DerniereActivite, Appareil)
+            VALUES (?, ?, ?, ?, NULL, ?, ?)
+        """, (utilisateur_id, jeton_hash, date_creation, date_expiration,
+              date_creation, appareil))
+        conn.commit()
+        return curseur.lastrowid
+
+
+def session_par_jeton(jeton_hash):
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT s.SessionID, s.UtilisateurID, s.DateCreation,
+                   s.DateExpiration, s.DateRevocation, s.DerniereActivite,
+                   s.Appareil, u.CoproprietaireID, u.Identifiant,
+                   u.MotDePasseHache, u.Sel, u.Role, u.Actif,
+                   u.DateCreation, u.ChangementMotDePasseObligatoire
+            FROM Sessions s
+            JOIN Utilisateurs u ON u.UtilisateurID = s.UtilisateurID
+            WHERE s.JetonHash = ?
+        """, (jeton_hash,)).fetchone()
+
+
+def actualiser_session(session_id, derniere_activite):
+    with closing(connexion()) as conn:
+        conn.execute("""
+            UPDATE Sessions SET DerniereActivite = ? WHERE SessionID = ?
+        """, (derniere_activite, session_id))
+        conn.commit()
+
+
+def revoquer_session(session_id, date_revocation):
+    with closing(connexion()) as conn:
+        conn.execute("""
+            UPDATE Sessions SET DateRevocation = ?
+            WHERE SessionID = ? AND DateRevocation IS NULL
+        """, (date_revocation, session_id))
+        conn.commit()
+
+
+def revoquer_sessions_utilisateur(utilisateur_id, date_revocation):
+    with closing(connexion()) as conn:
+        conn.execute("""
+            UPDATE Sessions SET DateRevocation = ?
+            WHERE UtilisateurID = ? AND DateRevocation IS NULL
+        """, (date_revocation, utilisateur_id))
+        conn.commit()
+
+
+def supprimer_sessions_expirees(date_limite):
+    with closing(connexion()) as conn:
+        curseur = conn.execute("""
+            DELETE FROM Sessions
+            WHERE DateExpiration < ? OR DateRevocation IS NOT NULL
+        """, (date_limite,))
+        conn.commit()
+        return curseur.rowcount

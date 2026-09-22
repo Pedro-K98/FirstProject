@@ -67,11 +67,33 @@ def _migration_comptes_phase_3(conn):
     """, (empreinte, sel, datetime.now().isoformat(timespec="seconds")))
 
 
+def _migration_sessions(conn):
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS Sessions (
+        SessionID INTEGER PRIMARY KEY AUTOINCREMENT,
+        UtilisateurID INTEGER NOT NULL,
+        JetonHash BLOB NOT NULL UNIQUE,
+        DateCreation TEXT NOT NULL,
+        DateExpiration TEXT NOT NULL,
+        DateRevocation TEXT,
+        DerniereActivite TEXT NOT NULL,
+        Appareil TEXT,
+        FOREIGN KEY (UtilisateurID) REFERENCES Utilisateurs(UtilisateurID)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_utilisateur
+        ON Sessions(UtilisateurID);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expiration
+        ON Sessions(DateExpiration);
+    """)
+
+
 MIGRATIONS = (
     (1, "comptes utilisateurs et journal", _migration_utilisateurs),
     (2, "conversion des montants en centimes", _migration_centimes),
     (9, "comptes administrateur et changement de mot de passe obligatoire",
      _migration_comptes_phase_3),
+    (10, "sessions utilisateurs", _migration_sessions),
 )
 
 

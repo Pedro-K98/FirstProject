@@ -2,6 +2,7 @@ import sqlite3
 import tempfile
 import unittest
 import hashlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -114,6 +115,34 @@ class TestComptesUtilisateurs(unittest.TestCase):
     def test_validation_mot_de_passe_court(self):
         with self.assertRaises(services.ErreurMetier):
             services.creer_utilisateur("admin", "court", "Admin")
+
+    def test_session_valide_et_jeton_non_stocke(self):
+        jeton = services.creer_session(self.admin, appareil="test")
+        self.assertIsNotNone(services.verifier_session(jeton))
+        connexion = sqlite3.connect(self.chemin)
+        try:
+            stocke = connexion.execute("SELECT JetonHash FROM Sessions").fetchone()[0]
+        finally:
+            connexion.close()
+        self.assertNotEqual(stocke, jeton.encode("utf-8"))
+
+    def test_session_revoquee_et_jeton_falsifie(self):
+        jeton = services.creer_session(self.admin)
+        self.assertIsNone(services.verifier_session(jeton + "x"))
+        services.revoquer_session(jeton)
+        self.assertIsNone(services.verifier_session(jeton))
+
+    def test_session_expiree_refusee(self):
+        jeton = services.creer_session(self.admin)
+        expiration = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        connexion = sqlite3.connect(self.chemin)
+        try:
+            connexion.execute(
+                "UPDATE Sessions SET DateExpiration = ?", (expiration,))
+            connexion.commit()
+        finally:
+            connexion.close()
+        self.assertIsNone(services.verifier_session(jeton))
 
 
 if __name__ == "__main__":

@@ -10,12 +10,13 @@ Ce fichier n'importe ni Tkinter ni rien de graphique : une API ou une applicatio
 mobile pourra l'utiliser telle quelle. Toutes les fonctions renvoient des types
 simples (int, float, str, list, dict), faciles à convertir en JSON.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from contextlib import closing
 import hashlib
 import hmac
 import os
+import secrets
 import sqlite3
 
 import config
@@ -27,6 +28,7 @@ TYPE_RAPPEL_RETARD = "Retard de paiement"
 STATUT_RAPPEL_EN_ATTENTE = "En attente"
 STATUT_RAPPEL_ENVOYE = "Envoye"
 _utilisateur_connecte = None
+_jeton_session = None
 
 
 class ErreurMetier(ValueError):
@@ -211,8 +213,78 @@ def definir_utilisateur_connecte(utilisateur):
     _utilisateur_connecte = utilisateur
 
 
+def definir_jeton_session(jeton):
+    global _jeton_session
+    _jeton_session = jeton
+
+
 def utilisateur_connecte():
     return _utilisateur_connecte
+
+
+def _maintenant_utc():
+    return datetime.now(timezone.utc)
+
+
+def _date_session(valeur):
+    return valeur.isoformat(timespec="seconds")
+
+
+def _hash_jeton(jeton):
+    return hashlib.sha256(jeton.encode("utf-8")).digest()
+
+
+def creer_session(utilisateur, duree_minutes=60, appareil="Tkinter"):
+    if not utilisateur or not utilisateur[6]:
+        raise ErreurMetier("Le compte est inactif ou la session est invalide.")
+    if duree_minutes <= 0 or duree_minutes > 24 * 30:
+        raise ErreurMetier("La durée de session est invalide.")
+    maintenant = _maintenant_utc()
+    expiration = maintenant + timedelta(minutes=duree_minutes)
+    jeton = secrets.token_urlsafe(32)
+    db.creer_session(
+        utilisateur[0], _hash_jeton(jeton), _date_session(maintenant),
+        _date_session(expiration), appareil)
+    return jeton
+
+
+def _utilisateur_depuis_session(ligne):
+    return (ligne[1], ligne[7], ligne[8], ligne[9], ligne[10], ligne[11],
+            ligne[12], ligne[13], ligne[14])
+
+
+def verifier_session(jeton):
+    if not jeton or not isinstance(jeton, str):
+        return None
+    ligne = db.session_par_jeton(_hash_jeton(jeton))
+    if not ligne or ligne[4] is not None or not ligne[12]:
+        return None
+    try:
+        expiration = datetime.fromisoformat(ligne[3]).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    if expiration <= _maintenant_utc():
+        return None
+    db.actualiser_session(ligne[0], _date_session(_maintenant_utc()))
+    return _utilisateur_depuis_session(ligne)
+
+
+def revoquer_session(jeton):
+    ligne = db.session_par_jeton(_hash_jeton(jeton)) if jeton else None
+    if ligne:
+        db.revoquer_session(ligne[0], _date_session(_maintenant_utc()))
+
+
+def revoquer_sessions_utilisateur(utilisateur_id, acteur=None):
+    acteur = _exiger_admin(acteur)
+    if not db.utilisateur_par_id(utilisateur_id):
+        raise ErreurMetier("Compte introuvable.")
+    db.revoquer_sessions_utilisateur(utilisateur_id, _date_session(_maintenant_utc()))
+    _journal(acteur, "revocation_sessions", str(utilisateur_id))
+
+
+def nettoyer_sessions_expirees():
+    return db.supprimer_sessions_expirees(_date_session(_maintenant_utc()))
 
 
 def lister_coproprietaires():
