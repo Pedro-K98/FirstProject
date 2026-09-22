@@ -408,6 +408,26 @@ def lister_reclamations():
     return db.lister_reclamations()
 
 
+def ajouter_reclamation(coproprietaire_id, date_reclamation, objet, description, statut):
+    acteur = _exiger_admin()
+    statuts = {"En attente", "En cours", "Résolue", "Fermée"}
+    if statut not in statuts:
+        raise ErreurMetier("Statut de réclamation invalide.")
+    if not objet.strip() or not description.strip():
+        raise ErreurMetier("L'objet et la description sont obligatoires.")
+    resultat = db.ajouter_reclamation(
+        coproprietaire_id, date_reclamation, objet.strip(), description.strip(), statut)
+    _journal(acteur, "ajout_reclamation", objet.strip())
+    return resultat
+
+
+def supprimer_reclamation(reclamation_id):
+    acteur = _exiger_admin()
+    resultat = db.supprimer_reclamation(reclamation_id)
+    _journal(acteur, "suppression_reclamation", str(reclamation_id))
+    return resultat
+
+
 def changer_statut_reclamation(reclamation_id, nouveau_statut):
     """Met à jour le statut d'une réclamation. Permet un usage sans session admin pour les tâches internes."""
     if nouveau_statut not in {"En attente", "En cours", "Résolue", "Fermée"}:

@@ -314,6 +314,12 @@ def changer_statut_reclamation(reclamation_id, nouveau_statut):
         conn.commit()
 
 
+def supprimer_reclamation(reclamation_id):
+    with closing(connexion()) as conn:
+        conn.execute("DELETE FROM Reclamations WHERE ReclamationID = ?", (reclamation_id,))
+        conn.commit()
+
+
 def reclamations_par_statut():
     with closing(connexion()) as conn:
         return conn.execute("""

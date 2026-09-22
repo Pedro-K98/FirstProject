@@ -488,7 +488,7 @@ def creer_compte_resident_ui(ligne):
 
 def demander_connexion(parent):
     resultat = []
-    fenetre = tk.Toplevel(parent)
+    fenetre = tk.Toplevel()
     fenetre.title("Connexion administrateur")
     fenetre.geometry("430x190")
     fenetre.resizable(False, False)
@@ -536,8 +536,12 @@ def demander_connexion(parent):
         row=3, column=0, columnspan=2, sticky="ew", pady=(10, 4))
     cadre.columnconfigure(1, weight=1)
     fenetre.update_idletasks()
+    largeur_fenetre = fenetre.winfo_width()
+    hauteur_fenetre = fenetre.winfo_height()
+    x = max(0, (fenetre.winfo_screenwidth() - largeur_fenetre) // 2)
+    y = max(0, (fenetre.winfo_screenheight() - hauteur_fenetre) // 2)
+    fenetre.geometry(f"{largeur_fenetre}x{hauteur_fenetre}+{x}+{y}")
     entree_identifiant.focus_set()
-    fenetre.transient(parent)
     fenetre.grab_set()
     fenetre.deiconify()
     fenetre.lift()
@@ -615,7 +619,14 @@ def lancer():
 
     root = tk.Tk()
     root.title("Application Syndic")
-    root.geometry("1100x650")
+
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    largeur = min(1400, max(1000, int(screen_width * 0.85)))
+    hauteur = min(900, max(650, int(screen_height * 0.82)))
+    x = max(0, (screen_width - largeur) // 2)
+    y = max(0, (screen_height - hauteur) // 2)
+    root.geometry(f"{largeur}x{hauteur}+{x}+{y}")
     root.minsize(900, 550)
 
     root.withdraw()
