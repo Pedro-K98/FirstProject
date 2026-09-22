@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f0ebe2">
+  <meta name="description" content="Connexion à l'espace résident Amana">
+  <title>Amana | Connexion</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="stage">
+    <section class="phone" aria-label="Connexion à Amana">
+      <div class="phone__topbar">
+        <span class="phone__time">9:41</span>
+        <span class="phone__brand">Amana</span>
+      </div>
+
+      <div class="login-content">
+        <div class="app-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" role="img">
+            <path class="mark-house" d="M14 30.5 32 15l18 15.5v19a2.5 2.5 0 0 1-2.5 2.5h-31a2.5 2.5 0 0 1-2.5-2.5v-19Z"/>
+            <path class="mark-door" d="M27 52V36h10v16M22 31h20"/>
+            <circle class="mark-key" cx="45.5" cy="23" r="5"/>
+            <path class="mark-key" d="m42 26.5-5 5m1.7-1.7 2.2 2.2"/>
+          </svg>
+        </div>
+
+        <header class="welcome">
+          <p class="eyebrow">ESPACE RÉSIDENT</p>
+          <h1>Bienvenue</h1>
+          <p>Résidence Al Amal <span class="divider">—</span> connectez-vous avec l’identifiant fourni par votre syndic.</p>
+        </header>
+
+        <form class="login-form" id="login-form" novalidate>
+          <label class="field">
+            <span>Identifiant</span>
+            <input id="identifiant" name="identifiant" type="text" autocomplete="username" placeholder="Votre identifiant" value="kenza" required>
+          </label>
+
+          <label class="field">
+            <span>Mot de passe</span>
+            <div class="password-wrap">
+              <input id="mot-de-passe" name="mot_de_passe" type="password" autocomplete="current-password" placeholder="Votre mot de passe" value="amana-demo" required>
+              <button class="password-toggle" id="password-toggle" type="button" aria-label="Afficher le mot de passe" title="Afficher le mot de passe">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-5 9.5-5 9.5 5 9.5 5-3.4 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+              </button>
+            </div>
+          </label>
+
+          <button class="submit-button" type="submit">
+            <span>Se connecter</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13m-5-5 5 5-5 5"/></svg>
+          </button>
+          <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
+        </form>
+
+        <p class="help">Mot de passe oublié ? <a href="mailto:syndic@syndic.local">Contactez votre syndic.</a></p>
+      </div>
+
+      <div class="home-indicator" aria-hidden="true"></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
