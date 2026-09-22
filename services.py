@@ -552,6 +552,95 @@ def verifier_identifiants(identifiant, mot_de_passe):
     return utilisateur if hmac.compare_digest(empreinte, utilisateur[3]) else None
 
 
+def api_login(identifiant, mot_de_passe):
+    compte = db.utilisateur_api_par_identifiant(identifiant.strip())
+    maintenant = _maintenant_utc()
+    if not compte or compte[5] != "Resident" or not compte[6]:
+        return None
+    if compte[9]:
+        try:
+            if datetime.fromisoformat(compte[9]).replace(tzinfo=timezone.utc) > maintenant:
+                return None
+        except ValueError:
+            pass
+
+    empreinte = _empreinte(mot_de_passe, compte[4])
+    if not hmac.compare_digest(empreinte, compte[3]):
+        echecs = compte[8] + 1
+        bloque = (maintenant + timedelta(minutes=15)).isoformat(timespec="seconds") \
+            if echecs >= 3 else None
+        db.modifier_verrouillage_api(compte[0], 0 if bloque else echecs, bloque)
+        return None
+
+    db.modifier_verrouillage_api(compte[0], 0, None)
+    utilisateur = db.utilisateur_par_id(compte[0])
+    token = creer_session(utilisateur, duree_minutes=24 * 30, appareil="API résident")
+    return token, utilisateur
+
+
+def api_resident(token):
+    utilisateur = verifier_session(token)
+    if not utilisateur or utilisateur[5] != "Resident" or utilisateur[1] is None:
+        raise ErreurMetier("Authentification résident requise.")
+    return utilisateur
+
+
+def api_me(utilisateur):
+    utilisateur = api_resident(utilisateur) if isinstance(utilisateur, str) else utilisateur
+    coproprietaire = db.coproprietaire_par_id(utilisateur[1])
+    return {
+        "id": utilisateur[0],
+        "identifiant": utilisateur[2],
+        "role": utilisateur[5],
+        "coproprietaire_id": utilisateur[1],
+        "lots": [{"appartement": coproprietaire[6]}] if coproprietaire and coproprietaire[6] else [],
+    }
+
+
+def api_appels_de_fonds(utilisateur):
+    utilisateur = api_resident(utilisateur) if isinstance(utilisateur, str) else utilisateur
+    lignes = db.lister_paiements_pour_coproprietaire(utilisateur[1])
+    return [{
+        "id": ligne[0], "mois": ligne[1], "date": ligne[2],
+        "montant_du_centimes": int(ligne[3]), "montant_paye_centimes": int(ligne[4]),
+        "impaye_centimes": max(0, int(ligne[3]) - int(ligne[4])),
+        "statut": ligne[5], "mode": ligne[6], "echeance": ligne[7],
+    } for ligne in lignes]
+
+
+def api_paiements(utilisateur):
+    return api_appels_de_fonds(utilisateur)
+
+
+def api_reclamations(utilisateur):
+    utilisateur = api_resident(utilisateur) if isinstance(utilisateur, str) else utilisateur
+    return [{
+        "id": ligne[0], "date": ligne[1], "objet": ligne[2],
+        "description": ligne[3], "statut": ligne[4], "priorite": ligne[5],
+    } for ligne in db.lister_reclamations_pour_coproprietaire(utilisateur[1])]
+
+
+def api_ajouter_reclamation(utilisateur, objet, description, priorite="Normale"):
+    utilisateur = api_resident(utilisateur) if isinstance(utilisateur, str) else utilisateur
+    if priorite not in {"Basse", "Normale", "Haute", "Urgente"}:
+        raise ErreurMetier("Priorité de réclamation invalide.")
+    if not objet.strip() or not description.strip():
+        raise ErreurMetier("L'objet et la description sont obligatoires.")
+    reclamation_id = db.ajouter_reclamation(
+        utilisateur[1], aujourdhui(), objet.strip(), description.strip(),
+        "En attente", priorite)
+    _journal(utilisateur, "ajout_reclamation_api", objet.strip())
+    return reclamation_id
+
+
+def api_rappels(utilisateur):
+    utilisateur = api_resident(utilisateur) if isinstance(utilisateur, str) else utilisateur
+    return [{
+        "id": ligne[0], "date": ligne[1], "type": ligne[2],
+        "message": ligne[3], "statut": ligne[4], "canal": ligne[5],
+    } for ligne in db.lister_rappels_pour_coproprietaire(utilisateur[1])]
+
+
 def changer_mot_de_passe(utilisateur_id, nouveau_mot_de_passe, acteur=None):
     _valider_identifiants("compte", nouveau_mot_de_passe)
     utilisateur = db.utilisateur_par_id(utilisateur_id)

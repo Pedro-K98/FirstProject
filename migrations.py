@@ -125,6 +125,18 @@ def _migration_tracabilite_et_priorite(conn):
     """)
 
 
+def _migration_api_resident(conn):
+    colonnes_utilisateurs = {ligne[1] for ligne in conn.execute("PRAGMA table_info(Utilisateurs)")}
+    if "EchecsApi" not in colonnes_utilisateurs:
+        conn.execute("ALTER TABLE Utilisateurs ADD COLUMN EchecsApi INTEGER NOT NULL DEFAULT 0")
+    if "BloqueApiJusqua" not in colonnes_utilisateurs:
+        conn.execute("ALTER TABLE Utilisateurs ADD COLUMN BloqueApiJusqua TEXT")
+
+    colonnes_rappels = {ligne[1] for ligne in conn.execute("PRAGMA table_info(Rappels)")}
+    if "CanalEnvoi" not in colonnes_rappels:
+        conn.execute("ALTER TABLE Rappels ADD COLUMN CanalEnvoi TEXT NOT NULL DEFAULT 'email'")
+
+
 MIGRATIONS = (
     (1, "comptes utilisateurs et journal", _migration_utilisateurs),
     (2, "conversion des montants en centimes", _migration_centimes),
@@ -134,6 +146,7 @@ MIGRATIONS = (
     (11, "historique des statuts", _migration_historique_statuts),
     (12, "traçabilité financière, priorité et index métier",
      _migration_tracabilite_et_priorite),
+    (13, "accès API résident et canal des rappels", _migration_api_resident),
 )
 
 

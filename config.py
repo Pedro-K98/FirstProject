@@ -17,6 +17,7 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
 SMTP_UTILISATEUR = os.environ.get("SMTP_UTILISATEUR", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_EXPEDITEUR = os.environ.get("SMTP_EXPEDITEUR", "syndic@syndic.local")
+PWA_ORIGINE = os.environ.get("PWA_ORIGINE", "http://localhost:5173")
 
 # L'ancien nom reste disponible pour les modules existants.
 DB_NAME = str(CHEMIN_BASE)

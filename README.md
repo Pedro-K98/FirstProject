@@ -90,6 +90,45 @@ le rappel reste `En attente` et l'échec est journalisé.
 - `ui.py` : interface Tkinter.
 - `tests/` : tests automatisés.
 
+## API résident Amana
+
+La maquette Amana reste statique dans cette phase. L'API est séparée dans `api/` et
+utilise des tokens de session opaques révoquables, déjà compatibles avec les sessions
+de l'application. Les montants JSON sont toujours des entiers en centimes de MAD.
+
+Lancer le serveur :
+
+```powershell
+python -m uvicorn api.app:app --reload --port 8000
+```
+
+Origine autorisée par défaut : `http://localhost:5173`. Elle peut être changée avec
+la variable `PWA_ORIGINE`.
+
+Endpoints résident :
+
+- `POST /auth/login` : obtenir un token avec `identifiant` et `mot_de_passe`.
+- `GET /me` : identité et lots/appartements associés.
+- `GET /appels-de-fonds` : obligations de paiement du résident et `impaye_centimes`.
+- `GET /paiements` : historique des paiements, en centimes.
+- `POST /reclamations` : créer une réclamation avec `priorite` optionnelle.
+- `GET /reclamations` : réclamations du résident connecté uniquement.
+- `GET /rappels` : rappels liés à ses paiements.
+
+Exemple :
+
+```powershell
+$login = Invoke-RestMethod http://localhost:8000/auth/login -Method Post `
+	-ContentType 'application/json' -Body '{"identifiant":"resident_a","mot_de_passe":"motdepasse-a"}'
+$headers = @{ Authorization = "Bearer $($login.access_token)" }
+Invoke-RestMethod http://localhost:8000/me -Headers $headers
+Invoke-RestMethod http://localhost:8000/paiements -Headers $headers
+```
+
+Après trois échecs de connexion, le compte résident est bloqué pendant 15 minutes.
+Un résident ne peut jamais lire les données d'un autre résident : le contrôle est
+effectué dans `services.py`, pas seulement dans les routes HTTP.
+
 ## Faire évoluer la base
 
 Ajoutez une nouvelle fonction de migration à `migrations.py`, avec un numéro supérieur

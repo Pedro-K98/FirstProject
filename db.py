@@ -472,6 +472,33 @@ def utilisateur_par_id(utilisateur_id):
         """, (utilisateur_id,)).fetchone()
 
 
+def utilisateur_api_par_identifiant(identifiant):
+    with closing(connexion()) as conn:
+        return conn.execute("""
+            SELECT UtilisateurID, CoproprietaireID, Identifiant,
+                   MotDePasseHache, Sel, Role, Actif,
+                   ChangementMotDePasseObligatoire, EchecsApi, BloqueApiJusqua
+            FROM Utilisateurs WHERE Identifiant = ?
+        """, (identifiant,)).fetchone()
+
+
+def modifier_verrouillage_api(utilisateur_id, echecs, bloque_jusqua):
+    with closing(connexion()) as conn:
+        conn.execute("""
+            UPDATE Utilisateurs SET EchecsApi = ?, BloqueApiJusqua = ?
+            WHERE UtilisateurID = ?
+        """, (echecs, bloque_jusqua, utilisateur_id))
+        conn.commit()
+
+
+def coproprietaire_par_id(coproprietaire_id):
+    with closing(connexion()) as conn:
+        return conn.execute(
+            "SELECT * FROM Coproprietaires WHERE CoproprietaireID = ?",
+            (coproprietaire_id,),
+        ).fetchone()
+
+
 def modifier_mot_de_passe(utilisateur_id, mot_de_passe_hache, sel):
     with closing(connexion()) as conn:
         conn.execute("""
@@ -557,7 +584,7 @@ def lister_paiements_pour_coproprietaire(coproprietaire_id):
 def lister_reclamations_pour_coproprietaire(coproprietaire_id):
     with closing(connexion()) as conn:
         return conn.execute("""
-            SELECT ReclamationID, DateReclamation, Objet, Description, Statut
+            SELECT ReclamationID, DateReclamation, Objet, Description, Statut, Priorite
             FROM Reclamations WHERE CoproprietaireID = ?
             ORDER BY DateReclamation DESC
         """, (coproprietaire_id,)).fetchall()
@@ -566,7 +593,7 @@ def lister_reclamations_pour_coproprietaire(coproprietaire_id):
 def lister_rappels_pour_coproprietaire(coproprietaire_id):
     with closing(connexion()) as conn:
         return conn.execute("""
-            SELECT RappelID, DateRappel, TypeRappel, Message, StatutEnvoi
+            SELECT RappelID, DateRappel, TypeRappel, Message, StatutEnvoi, CanalEnvoi
             FROM Rappels WHERE CoproprietaireID = ?
             ORDER BY DateRappel DESC
         """, (coproprietaire_id,)).fetchall()

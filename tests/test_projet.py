@@ -135,7 +135,7 @@ class TestComptesUtilisateurs(unittest.TestCase):
             }
         finally:
             connexion.close()
-        self.assertEqual(version, 12)
+        self.assertEqual(version, 13)
         self.assertTrue({"Utilisateurs", "JournalActions", "Sessions", "HistoriqueStatuts"} <= tables)
 
     def test_tracabilite_financiere_et_index(self):
