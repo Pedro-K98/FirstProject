@@ -107,6 +107,21 @@ class TestComptesUtilisateurs(unittest.TestCase):
         self.assertEqual(len(services.lister_reclamations_pour_utilisateur(imposteur)), 1)
         self.assertEqual(len(services.lister_rappels_pour_utilisateur(imposteur)), 1)
 
+    def test_session_resident_compatible_avec_vues_residentes(self):
+        resident = services.creer_utilisateur(
+            "resident-session", "motdepasse-solide", "Resident", self.coproprietaire_id, self.admin)
+        session = services.Session.depuis_utilisateur_id(resident[0])
+        db.ajouter_paiement(self.coproprietaire_id, "2026-01", "2026-01-10",
+                            10000, 5000, "Impaye", "Virement", "2026-01-31")
+        db.ajouter_reclamation(self.coproprietaire_id, "2026-01-15", "Plomberie", "Fuite", "En attente")
+        db.ajouter_rappel(self.coproprietaire_id, "2026-01-20", "Information", "Message 1", "En attente")
+
+        self.assertEqual(len(services.lister_paiements_pour_utilisateur(session)), 1)
+        self.assertEqual(len(services.lister_reclamations_pour_utilisateur(session)), 1)
+        self.assertEqual(len(services.lister_rappels_pour_utilisateur(session)), 1)
+        self.assertEqual(len(services.mes_reclamations(session)), 1)
+        self.assertEqual(len(services.mes_rappels(session)), 1)
+
     def test_reclamation_peut_changer_de_statut(self):
         reclamation_id = db.ajouter_reclamation(
             self.coproprietaire_id, "2026-01-15", "Plomberie", "Fuite", "En attente")

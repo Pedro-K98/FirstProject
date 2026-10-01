@@ -363,6 +363,12 @@ def _utilisateur_depuis_session(ligne):
             ligne[12], ligne[13], ligne[14])
 
 
+def _normaliser_utilisateur(utilisateur):
+    if isinstance(utilisateur, Session):
+        return utilisateur.utilisateur
+    return utilisateur
+
+
 @dataclass(frozen=True)
 class Session:
     """Session métier reconstruite les infos utilisateur à partir d'un identifiant unique.
@@ -785,7 +791,7 @@ def reinitialiser_mot_de_passe(utilisateur_id, acteur=None):
 
 
 def lister_paiements_pour_utilisateur(utilisateur=None):
-    utilisateur = utilisateur or _acteur()
+    utilisateur = _normaliser_utilisateur(utilisateur or _acteur())
     if not utilisateur or not utilisateur[6]:
         raise ErreurMetier("Le compte est inactif ou la session est invalide.")
     if utilisateur[5] == "Admin":
@@ -802,14 +808,14 @@ def lister_appels_pour_utilisateur(utilisateur=None):
 
 
 def lister_reclamations_pour_utilisateur(utilisateur=None):
-    utilisateur = utilisateur or _acteur()
+    utilisateur = _normaliser_utilisateur(utilisateur or _acteur())
     if not utilisateur or not utilisateur[6] or utilisateur[5] != "Resident":
         raise ErreurMetier("Seul un résident actif peut consulter ses réclamations.")
     return db.lister_reclamations_pour_coproprietaire(utilisateur[1])
 
 
 def lister_rappels_pour_utilisateur(utilisateur=None):
-    utilisateur = utilisateur or _acteur()
+    utilisateur = _normaliser_utilisateur(utilisateur or _acteur())
     if not utilisateur or not utilisateur[6] or utilisateur[5] != "Resident":
         raise ErreurMetier("Seul un résident actif peut consulter ses rappels.")
     return db.lister_rappels_pour_coproprietaire(utilisateur[1])
