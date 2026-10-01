@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Tableau de bord{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <h2>Tableau de bord</h2>
+    <div class="cards-grid">
+      <div class="stat-card">
+        <span class="label">Solde</span>
+        <strong>{{ '%.2f'|format(tableau.solde) }} MAD</strong>
+      </div>
+      <div class="stat-card">
+        <span class="label">Total appelé</span>
+        <strong>{{ '%.2f'|format(tableau.total_appele) }} MAD</strong>
+      </div>
+      <div class="stat-card">
+        <span class="label">Total payé</span>
+        <strong>{{ '%.2f'|format(tableau.total_paye) }} MAD</strong>
+      </div>
+      <div class="stat-card">
+        <span class="label">Reste à payer</span>
+        <strong>{{ '%.2f'|format(tableau.reste_a_payer) }} MAD</strong>
+      </div>
+      <div class="stat-card">
+        <span class="label">Appels en retard</span>
+        <strong>{{ tableau.appels_en_retard }}</strong>
+      </div>
+    </div>
+  </section>
+{% endblock %}

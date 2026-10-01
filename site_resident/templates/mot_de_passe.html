@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Changer le mot de passe{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <h2>Modifier mon mot de passe</h2>
+    <form method="post" class="form-grid">
+      <label>
+        Ancien mot de passe
+        <input type="password" name="ancien_mot_de_passe" required>
+      </label>
+      <label>
+        Nouveau mot de passe
+        <input type="password" name="nouveau_mot_de_passe" required>
+      </label>
+      <label>
+        Confirmation
+        <input type="password" name="confirmation" required>
+      </label>
+      <button type="submit">Enregistrer</button>
+    </form>
+  </section>
+{% endblock %}

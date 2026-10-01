@@ -175,6 +175,20 @@ class TestComptesUtilisateurs(unittest.TestCase):
                 self.coproprietaire_id, "2026-02-01", "Test", "Test",
                 "En attente", "Critique")
 
+    def test_deposer_reclamation_par_resident(self):
+        resident = services.creer_utilisateur(
+            "resident2", "motdepasse-solide", "Resident", self.coproprietaire_id, self.admin)
+        session = services.Session.depuis_utilisateur_id(resident[0])
+        reclamation_id = services.deposer_reclamation(
+            session, "Portail", "Le portail est bloqué.", "Haute")
+        self.assertTrue(reclamation_id)
+        reclamations = db.lister_reclamations_pour_coproprietaire(self.coproprietaire_id)
+        self.assertEqual(reclamations[0][2], "Portail")
+        with self.assertRaises(services.ErreurMetier):
+            services.deposer_reclamation(
+                services.Session.depuis_utilisateur_id(self.admin[0]),
+                "Accès", "Tentative interdite", "Normale")
+
     def test_statuts_paiements_automatiques(self):
         db.ajouter_paiement(self.coproprietaire_id, "2026-01", "2026-01-10",
                             10000, 10000, "Paye", "Virement", "2026-01-31")

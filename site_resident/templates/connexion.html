@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Connexion résident{% endblock %}
+
+{% block content %}
+  <section class="card login-panel">
+    <h2>Connexion résidents</h2>
+    <p>Accédez à votre espace dédié pour consulter vos appels, vos rappels et déposer une réclamation.</p>
+    <form method="post" class="form-grid">
+      <label>
+        Identifiant
+        <input type="text" name="identifiant" required>
+      </label>
+      <label>
+        Mot de passe
+        <input type="password" name="mot_de_passe" required>
+      </label>
+      <button type="submit">Se connecter</button>
+    </form>
+  </section>
+{% endblock %}

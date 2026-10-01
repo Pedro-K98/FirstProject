@@ -11,6 +11,7 @@ mobile pourra l'utiliser telle quelle. Toutes les fonctions renvoient des types
 simples (int, float, str, list, dict), faciles à convertir en JSON.
 """
 from contextlib import closing
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
@@ -362,6 +363,58 @@ def _utilisateur_depuis_session(ligne):
             ligne[12], ligne[13], ligne[14])
 
 
+@dataclass(frozen=True)
+class Session:
+    """Session métier reconstruite les infos utilisateur à partir d'un identifiant unique.
+
+    Le site résident ne stocke dans la session Flask que l'identifiant utilisateur ;
+    l'objet Session est reconstitué à chaque requête à partir de la base.
+    """
+    utilisateur: tuple
+
+    @classmethod
+    def depuis_utilisateur_id(cls, utilisateur_id):
+        utilisateur = db.utilisateur_par_id(utilisateur_id)
+        if not utilisateur:
+            raise ErreurMetier("Compte introuvable.")
+        return cls(utilisateur)
+
+    @property
+    def utilisateur_id(self):
+        return self.utilisateur[0]
+
+    @property
+    def coproprietaire_id(self):
+        return self.utilisateur[1]
+
+    @property
+    def identifiant(self):
+        return self.utilisateur[2]
+
+    @property
+    def role(self):
+        return self.utilisateur[5]
+
+    @property
+    def actif(self):
+        return bool(self.utilisateur[6])
+
+    def exiger_resident(self):
+        if not self.actif or self.role != "Resident":
+            raise ErreurMetier("Accès résident refusé.")
+        if self.coproprietaire_id is None:
+            raise ErreurMetier("Ce compte résident n'est pas rattaché à un copropriétaire.")
+        return self
+
+    def exiger_admin(self):
+        if not self.actif or self.role != "Admin":
+            raise ErreurMetier("Seul un administrateur actif peut effectuer cette action.")
+        return self
+
+    def as_tuple(self):
+        return self.utilisateur
+
+
 def verifier_session(jeton):
     if not jeton or not isinstance(jeton, str):
         return None
@@ -633,6 +686,29 @@ def api_ajouter_reclamation(utilisateur, objet, description, priorite="Normale")
     return reclamation_id
 
 
+def deposer_reclamation(session, objet, description, priorite="Normale"):
+    """Ajoute une réclamation au nom du résident connecté, sans jamais accepter un ID saisi par le formulaire."""
+    if isinstance(session, Session):
+        session = session
+    elif isinstance(session, tuple):
+        session = Session(session)
+    else:
+        session = Session.depuis_utilisateur_id(session)
+    session.exiger_resident()
+    priorites = {"Basse", "Normale", "Haute", "Urgente"}
+    if priorite not in priorites:
+        raise ErreurMetier("Priorité de réclamation invalide.")
+    objet = (objet or "").strip()
+    description = (description or "").strip()
+    if not objet or not description:
+        raise ErreurMetier("L'objet et la description sont obligatoires.")
+    reclamation_id = db.ajouter_reclamation(
+        session.coproprietaire_id, aujourdhui(), objet, description,
+        "En attente", priorite)
+    _journal(session.utilisateur, "ajout_reclamation_resident", objet)
+    return reclamation_id
+
+
 def api_rappels(utilisateur):
     utilisateur = api_resident(utilisateur) if isinstance(utilisateur, str) else utilisateur
     return [{
@@ -641,11 +717,17 @@ def api_rappels(utilisateur):
     } for ligne in db.lister_rappels_pour_coproprietaire(utilisateur[1])]
 
 
-def changer_mot_de_passe(utilisateur_id, nouveau_mot_de_passe, acteur=None):
+def changer_mot_de_passe(utilisateur_id, nouveau_mot_de_passe, acteur=None, ancien_mot_de_passe=None):
+    """Compatibilité : le code historique appelle changer_mot_de_passe(user_id, nouveau_mdp, acteur).
+    Le site résident peut aussi fournir ancien_mot_de_passe pour valider l'ancien mot de passe.
+    """
     _valider_identifiants("compte", nouveau_mot_de_passe)
     utilisateur = db.utilisateur_par_id(utilisateur_id)
     if not utilisateur:
         raise ErreurMetier("Compte introuvable.")
+    if ancien_mot_de_passe is not None:
+        if not verifier_identifiants(utilisateur[2], ancien_mot_de_passe):
+            raise ErreurMetier("L'ancien mot de passe est incorrect.")
     if not acteur or not acteur[6]:
         raise ErreurMetier("Le compte est inactif ou la session est invalide.")
     acteur = _acteur(acteur)
@@ -733,8 +815,45 @@ def lister_rappels_pour_utilisateur(utilisateur=None):
     return db.lister_rappels_pour_coproprietaire(utilisateur[1])
 
 
+def mon_tableau_de_bord(utilisateur=None):
+    """Vue résidente compatible avec le site web et les appels internes."""
+    utilisateur = utilisateur or _acteur()
+    if isinstance(utilisateur, Session):
+        utilisateur = utilisateur.utilisateur
+    if not utilisateur or not utilisateur[6] or utilisateur[5] != "Resident":
+        raise ErreurMetier("Accès résident refusé.")
+    lignes = db.lister_paiements_pour_coproprietaire(utilisateur[1])
+    total_appele = sum(int(ligne[3]) for ligne in lignes)
+    total_paye = sum(int(ligne[4]) for ligne in lignes)
+    reste = max(0, total_appele - total_paye)
+    appels_retard = sum(1 for ligne in lignes if ligne[5] in {"En retard", "Impaye"})
+    return {
+        "solde": en_montant(total_paye),
+        "total_appele": en_montant(total_appele),
+        "total_paye": en_montant(total_paye),
+        "reste_a_payer": en_montant(reste),
+        "appels_en_retard": appels_retard,
+        "paiements": [ligne[:3] + tuple(en_montant(v) for v in ligne[3:5]) + ligne[5:]
+                      for ligne in lignes],
+    }
+
+
+def mes_appels(utilisateur=None):
+    return lister_appels_pour_utilisateur(utilisateur)
+
+
+def mes_reclamations(utilisateur=None):
+    return lister_reclamations_pour_utilisateur(utilisateur)
+
+
+def mes_rappels(utilisateur=None):
+    return lister_rappels_pour_utilisateur(utilisateur)
+
+
 def tableau_resident(utilisateur=None):
     utilisateur = utilisateur or _acteur()
+    if isinstance(utilisateur, Session):
+        utilisateur = utilisateur.utilisateur
     if not utilisateur or not utilisateur[6] or utilisateur[5] != "Resident":
         raise ErreurMetier("Accès résident refusé.")
     return {

@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Appels de fonds{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <h2>Appels de fonds</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Mois</th>
+            <th>Date</th>
+            <th>Montant dû</th>
+            <th>Montant payé</th>
+            <th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for appel in appels %}
+            {% set statut = appel[5] %}
+            <tr>
+              <td>{{ appel[1] }}</td>
+              <td>{{ appel[2] }}</td>
+              <td class="montant">{{ '%.2f'|format(appel[3]) }} MAD</td>
+              <td class="montant">{{ '%.2f'|format(appel[4]) }} MAD</td>
+              <td>
+                {% if statut == 'Paye' %}
+                  <span class="badge paye">Payé</span>
+                {% elif statut == 'En retard' %}
+                  <span class="badge retard">En retard</span>
+                {% else %}
+                  <span class="badge impaye">Impayé</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5">Aucun appel de fonds pour le moment.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

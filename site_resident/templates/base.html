@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Espace résident{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <div class="page-shell">
+      {% if utilisateur %}
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Espace résident</p>
+            <h1>{{ utilisateur.identifiant }}</h1>
+          </div>
+          <nav class="nav">
+            <a href="{{ url_for('dashboard') }}">Accueil</a>
+            <a href="{{ url_for('appels') }}">Appels</a>
+            <a href="{{ url_for('reclamations') }}">Réclamations</a>
+            <a href="{{ url_for('rappels') }}">Rappels</a>
+            <a href="{{ url_for('mot_de_passe') }}">Mot de passe</a>
+            <a href="{{ url_for('deconnexion') }}" class="link-alert">Déconnexion</a>
+          </nav>
+        </header>
+      {% endif %}
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="alerts">
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">
+                {{ message }}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <main class="container">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>
